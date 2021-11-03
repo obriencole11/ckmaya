@@ -1,6 +1,7 @@
-![](images/managerui.png)
 # ckmaya
 This project is a custom interface for using [ck-cmd](https://github.com/aerisarn/ck-cmd) inside Autodesk Maya.
+
+![](images/managerui.png)
 
 ## Installation
 1. Download the entire depot as a .zip file.
