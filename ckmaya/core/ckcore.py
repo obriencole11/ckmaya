@@ -120,7 +120,11 @@ def exportAnimation():
     # Get the export joint
     if exportJointName == '':
         raise ValueError('Invalid export node name "%s"' % exportJointName)
-    exportJoints = cmds.ls('*:%s' % exportJointName if ':' not in exportJointName else exportJointName) or []
+    exportJoints = []
+    for joint in cmds.ls('*:%s' % exportJointName) or []:
+        exportJoints.append(joint)
+    for joint in cmds.ls(exportJointName) or []:
+        exportJoints.append(joint)
     if len(exportJoints) == 0:
         raise ValueError('Export node "%s" does not exist.' % exportJointName)
     if len(exportJoints) > 1:

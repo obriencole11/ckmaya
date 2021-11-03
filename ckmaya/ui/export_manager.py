@@ -371,33 +371,36 @@ class AnimationTab(ProjectTab):
 
         exportButtonLayout = QtWidgets.QHBoxLayout()
         exportGroupLayout.addLayout(exportButtonLayout)
-        exportSelectedButton = QtWidgets.QPushButton('Export Selected', self)
-        exportSelectedButton.pressed.connect(self.exportSelected)
-        exportButtonLayout.addWidget(exportSelectedButton)
-        exportAllButton = QtWidgets.QPushButton('Export All', self)
-        exportAllButton.pressed.connect(self.exportAll)
-        exportButtonLayout.addWidget(exportAllButton)
+        self.exportSelectedButton = QtWidgets.QPushButton('Export Selected', self)
+        self.exportSelectedButton.pressed.connect(self.exportSelected)
+        exportButtonLayout.addWidget(self.exportSelectedButton)
+        self.exportAllButton = QtWidgets.QPushButton('Export All', self)
+        self.exportAllButton.pressed.connect(self.exportAll)
+        exportButtonLayout.addWidget(self.exportAllButton)
 
         lowerButtonLayout = QtWidgets.QHBoxLayout()
         exportGroupLayout.addLayout(lowerButtonLayout)
-        exportButton = QtWidgets.QPushButton('Export Current Scene', self)
-        exportButton.setMinimumHeight(32)
-        exportButton.pressed.connect(self.exportScene)
-        lowerButtonLayout.addWidget(exportButton)
+        self.exportButton = QtWidgets.QPushButton('Export Current Scene', self)
+        self.exportButton.setMinimumHeight(32)
+        self.exportButton.pressed.connect(self.exportScene)
+        lowerButtonLayout.addWidget(self.exportButton)
 
     def importSelected(self):
         return
 
     def exportSelected(self):
         self._export(self.exportAnimationBox.getSelectedFiles())
+        self.exportSelectedButton.setDown(False)
 
     def exportAll(self):
         self._export(self.exportAnimationBox.getAllFiles())
+        self.exportAllButton.setDown(False)
 
     def exportScene(self):
         try:
             QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
             ckcore.exportAnimation()
+            self.exportButton.setDown(False)
         finally:
             QtWidgets.QApplication.restoreOverrideCursor()
 
@@ -411,7 +414,12 @@ class AnimationTab(ProjectTab):
 
         # Export each scene
         for file in files:
-            cmds.file(file, o=True, force=True, prompt=False)
+            cmds.file(new=True, force=True, prompt=False)
+            cmds.file(rn=file)
+            try:
+                cmds.file(file, i=True, force=True, prompt=False)
+            except:
+                pass
             ckcore.exportAnimation()
 
 
@@ -440,6 +448,7 @@ class ProjectModel(QtCore.QObject):
 
     def setProject(self, project):
         self._project = project
+        self._data = {}
         self.loadData()
 
     def loadData(self):

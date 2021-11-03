@@ -377,13 +377,7 @@ def getProject(path=None):
         Project: A project object.
     """
     if path is None:
-        # First find a project for the current scene
-        if 'untitled' not in getSceneName():
-            sceneProject = getProject(getSceneName())
-            if sceneProject is not None:
-                return sceneProject
-
-        # Otherwise return the current workspace
+        # Return the current workspace
         project = getProject(cmds.workspace(active=True, q=True))
         if project is not None:
             return project
