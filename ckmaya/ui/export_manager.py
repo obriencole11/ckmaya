@@ -345,20 +345,20 @@ class AnimationTab(ProjectTab):
     def __init__(self, model, parent=None):
         super(AnimationTab, self).__init__(model, parent=parent)
 
-        importGroup, importGroupLayout = self.addGroupBox('Import Animation')
-        importGroup.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Minimum)
-        importAnimationDirBox = ProjectDirectoryBox('Import Directory', ckproject.Project.importAnimationDir, model,
-                                                      parent=self)
-        importGroupLayout.addWidget(importAnimationDirBox)
-        importAnimationBox = ProjectListBox('Animations', ckproject.Project.importAnimationDir, model,
-                                            fileTypes=['hkx'], parent=self)
-        importGroupLayout.addWidget(importAnimationBox)
-
-        importButtonLayout = QtWidgets.QHBoxLayout()
-        importGroupLayout.addLayout(importButtonLayout)
-        importSelectedButton = QtWidgets.QPushButton('Import Selected', self)
-        importSelectedButton.pressed.connect(self.importSelected)
-        importButtonLayout.addWidget(importSelectedButton)
+        # importGroup, importGroupLayout = self.addGroupBox('Import Animation')
+        # importGroup.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Minimum)
+        # importAnimationDirBox = ProjectDirectoryBox('Import Directory', ckproject.Project.importAnimationDir, model,
+        #                                               parent=self)
+        # importGroupLayout.addWidget(importAnimationDirBox)
+        # importAnimationBox = ProjectListBox('Animations', ckproject.Project.importAnimationDir, model,
+        #                                     fileTypes=['hkx'], parent=self)
+        # importGroupLayout.addWidget(importAnimationBox)
+        #
+        # importButtonLayout = QtWidgets.QHBoxLayout()
+        # importGroupLayout.addLayout(importButtonLayout)
+        # importSelectedButton = QtWidgets.QPushButton('Import Selected', self)
+        # importSelectedButton.pressed.connect(self.importSelected)
+        # importButtonLayout.addWidget(importSelectedButton)
 
         exportGroup, exportGroupLayout = self.addGroupBox('Export Animation')
         exportGroup.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Minimum)
@@ -503,7 +503,7 @@ class ExportManager(MayaWindow):
 
     def __init__(self):
         super(ExportManager, self).__init__()
-        self.setWindowTitle('CKMaya Export Manager')
+        self.setWindowTitle('CK-Maya Manager')
 
         self._model = ProjectModel(self)
 
