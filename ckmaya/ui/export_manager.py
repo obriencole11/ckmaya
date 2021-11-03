@@ -414,10 +414,8 @@ class AnimationTab(ProjectTab):
 
         # Export each scene
         for file in files:
-            cmds.file(new=True, force=True, prompt=False)
-            cmds.file(rn=file)
             try:
-                cmds.file(file, i=True, force=True, prompt=False)
+                cmds.file(file, o=True, force=True, prompt=False)
             except:
                 pass
             ckcore.exportAnimation()
