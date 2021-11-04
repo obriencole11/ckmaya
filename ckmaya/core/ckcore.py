@@ -1,7 +1,7 @@
 import os
 import shutil
 
-import ckcmd
+from ckmaya.core import ckcmd
 from ckmaya.core import ckproject
 import maya.api.OpenMaya as om2
 from maya import cmds, mel

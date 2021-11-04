@@ -192,7 +192,7 @@ class ProjectListBox(ProjectBox):
         self._listView.setModel(self._listModel)
 
         listLayout.addWidget(self._listView)
-        self._onDataChanged(self._key, self._model.getData(self._key))
+        # self._onDataChanged(self._key, self._model.getData(self._key))
 
     def onDoubleClick(self):
         if len(self._listView.selectedIndexes()) > 0:
@@ -439,7 +439,8 @@ class ProjectModel(QtCore.QObject):
         super(ProjectModel, self).__init__(parent)
         self._project = ckproject.getProject()
         self._data = {}
-        self.loadData()
+        if self._project is not None:
+            self.loadData()
 
     def getProject(self):
         return self._project
@@ -453,6 +454,9 @@ class ProjectModel(QtCore.QObject):
         """
         Loads data from project.
         """
+        if self._project is None:
+            return
+
         # Import
         self.setData(ckproject.Project.importSkeletonHkx, self._project.getImportSkeletonHkx())
         self.setData(ckproject.Project.importSkeletonNif, self._project.getImportSkeletonNif())
@@ -601,8 +605,8 @@ class ExportManager(MayaWindow):
     def updateProject(self):
         """ Updates the interface. """
         project = ckproject.getProject()
-        ckproject.addRecentProject(project.getDirectory())
         if project is not None:
+            ckproject.addRecentProject(project.getDirectory())
             self.setProjectText(project.getDirectory())
             self._tabWidget.show()
             self._buttonWidget.hide()

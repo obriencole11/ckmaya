@@ -378,7 +378,8 @@ def getProject(path=None):
     """
     if path is None:
         # Return the current workspace
-        project = getProject(cmds.workspace(active=True, q=True))
+        workspace = cmds.workspace(active=True, q=True)
+        project = getProject(workspace)
         if project is not None:
             return project
 

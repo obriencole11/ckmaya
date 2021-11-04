@@ -1,6 +1,7 @@
 """ A python wrapper around ckcmd.exe """
 
 import os
+import sys
 import tempfile
 import subprocess
 
@@ -8,6 +9,11 @@ import subprocess
 CKCMD = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'bin', 'ck-cmd.exe')
 HKXCMD = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'bin', 'hkxcmd.exe')
 BEHAVIOR_CONVERTER_PATH = os.path.join(os.path.dirname(__file__), 'bin', 'HavokBehaviorPostProcess.exe')
+
+
+def ispython3():
+    """ Determines if we are in a python 3 environment or python 2. """
+    return sys.version_info.major == 3
 
 
 def run_command(command, directory='/'):
@@ -20,13 +26,18 @@ def run_command(command, directory='/'):
     """
     command = command.replace('\\\\', '\\').replace('\\', '/')
     directory = directory.replace('\\\\', '\\').replace('\\', '/')
-    print command
+    print (command)
     with open(os.path.join(tempfile.gettempdir(), 'test.log'), 'w') as f:
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True, cwd=directory)
+        if ispython3():
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                       text=True, shell=True, cwd=directory)
+        else:
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                       shell=True, cwd=directory)
         out, err = process.communicate()
-        print out
-        if process.returncode != 0 or 'Exception' in err:
-            raise CkCmdException('\n%s' % err)
+        print (out)
+        if process.returncode != 0 or 'Exception' in str(err):
+            raise CkCmdException('\n%s' % str(err))
 
 
 def exportanimation(skeleton_hkx, animation_hkx, output_directory):
