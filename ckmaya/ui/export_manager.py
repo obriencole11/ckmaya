@@ -553,6 +553,7 @@ class ExportManager(MayaWindow):
         buttonLayout.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignHCenter)
         self._buttonWidget.setLayout(buttonLayout)
         openProjectButton = QtWidgets.QPushButton('Open Project...')
+        openProjectButton.pressed.connect(self.openProject)
         buttonLayout.addWidget(openProjectButton)
         self._buttonWidget.hide()
 
