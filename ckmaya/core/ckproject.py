@@ -359,7 +359,7 @@ def isProject(path):
     Returns:
         bool: Whether the path is a project.
     """
-    for projectFile in ['workspace.mel', 'scenes', 'textures']:
+    for projectFile in ['workspace.mel', 'metadata.json']:
         if not os.path.exists(os.path.join(path, projectFile)):
             return False
     return True
@@ -378,7 +378,7 @@ def getProject(path=None):
     """
     if path is None:
         # Return the current workspace
-        workspace = cmds.workspace(active=True, q=True)
+        workspace = cmds.workspace(rd=True, q=True)
         project = getProject(workspace)
         if project is not None:
             return project
