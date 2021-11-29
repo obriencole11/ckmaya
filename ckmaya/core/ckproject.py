@@ -20,8 +20,10 @@ def santizePath(path):
     Returns:
         str: A sanitized path.
     """
-    return path.replace('\\\\', '/').replace('\\', '/')
-
+    path = path.replace('\\\\', '/').replace('\\', '/')
+    if path.endswith('/'):
+        path = path[:-1]
+    return path
 
 def addRecentProject(directory):
     """
@@ -70,6 +72,9 @@ class Project(object):
     skeletonSceneFile = 'skeleton.ma'
     animationSceneDir = 'animations'
 
+    # Textures
+    textureDir = 'textures'
+
     # Export Files
     exportJointName = 'exportjointname'
     exportSkeletonHkx = 'exportskeleton.hkx'
@@ -80,7 +85,7 @@ class Project(object):
     exportAnimationDataDir = 'exportanimationdata'
 
     def __init__(self, directory):
-        self._directory = directory
+        self._directory = santizePath(directory)
 
     def __repr__(self):
         """ Formats the project name. """
@@ -184,6 +189,7 @@ class Project(object):
         Returns:
             str: The project file or directory path.
         """
+        path = santizePath(path)
         if self.getDirectory() in path:
             length = len(self.getDirectory().split('/'))
             path = '/'.join(path.split('/')[length:])
@@ -217,6 +223,9 @@ class Project(object):
     def getAnimationSceneDirectory(self): return self.getMetadataKey(self.animationSceneDir, '')
     def getSkeletonScene(self): return self.getMetadataKey(self.skeletonSceneFile, '')
 
+    # ---- Textures ---- #
+    def getTextureDirectory(self): return self.getMetadataKey(self.textureDir, '')
+
     # ---- Export ---- #
 
     def getExportSkeletonHkx(self): return self.getMetadataKey(self.exportSkeletonHkx, '')
@@ -226,7 +235,6 @@ class Project(object):
     def getExportBehaviorDirectory(self): return self.getMetadataKey(self.exportBehaviorDir, '')
     def getExportCacheFile(self): return self.getMetadataKey(self.exportCacheTxt, '')
     def getExportAnimationDataDirectory(self): return self.getMetadataKey(self.exportAnimationDataDir, '')
-
 
     # --- TODO Remove ----- #
 

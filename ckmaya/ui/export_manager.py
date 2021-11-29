@@ -338,6 +338,13 @@ class MetadataTab(ProjectTab):
                                                            ckproject.Project.exportAnimationDataDir, model, parent=self)
         exportGroupLayout.addWidget(self._exportAnimationDataBox)
 
+        # ----- Mesh Group ----- #
+        extraGroup, extraGroupLayout = self.addGroupBox('Additional Files')
+
+        self._textureDirectoryBox = ProjectDirectoryBox('Texture Directory',
+                                                           ckproject.Project.textureDir, model, parent=self)
+        extraGroupLayout.addWidget(self._textureDirectoryBox)
+
 
 class AnimationTab(ProjectTab):
     """ An export tab for animations files. """
@@ -477,6 +484,9 @@ class ProjectModel(QtCore.QObject):
         self.setData(ckproject.Project.exportCacheTxt, self._project.getExportCacheFile())
         self.setData(ckproject.Project.exportAnimationDataDir, self._project.getExportAnimationDataDirectory())
 
+        # Extra
+        self.setData(ckproject.Project.textureDir, self._project.getTextureDirectory())
+
     def getData(self, key, default=None):
         """
         Gets a given keys value.
@@ -500,11 +510,8 @@ class ProjectModel(QtCore.QObject):
         """
         self._project.setMetadataKey(key, str(value))
         self._data[key] = value
+        print (repr(key), repr(value))
         self.dataChanged.emit(key, value)
-
-
-class ProjectWidget(QtWidgets.QWidget):
-    pass
 
 
 class ExportManager(MayaWindow):
@@ -514,7 +521,7 @@ class ExportManager(MayaWindow):
 
     def __init__(self):
         super(ExportManager, self).__init__()
-        self.setWindowTitle('CK-Maya Manager')
+        self.setWindowTitle('Project Manager')
 
         self._model = ProjectModel(self)
 

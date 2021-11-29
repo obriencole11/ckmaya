@@ -7,6 +7,9 @@ import maya.api.OpenMaya as om2
 from maya import cmds, mel
 
 
+IMAGE_MAGICK_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'bin', 'imagemagick')
+
+
 def copyTagAttribiutes(srcRoot, dstRoot):
     """
     Copies animation tag attributes from the source root to the destination root.
@@ -69,6 +72,56 @@ def bakeSkeleton(root):
         cmds.bakeResults(joints, at=['tx', 'ty', 'tz', 'rx', 'ry', 'rz'], t=(start, end), simulation=True)
     finally:
         cmds.refresh(su=False)
+
+
+def importFbx(filepath, update=False):
+    """
+    Imports an fbx file and returns added nodes.
+
+    Args:
+        filepath(str): An fbx file path.
+        update(bool): Whether to update the scene rather than adding nodes.
+
+    Returns:
+        list: A list of node names.
+    """
+    if not str(filepath).endswith('.fbx'):
+        raise FbxException('"%s" is not an fbx file.' % filepath)
+    if not os.path.exists(filepath):
+        raise FbxException('Path "%s" does not exist' % filepath)
+
+    mObjects = []
+
+    def addNode(mObject, *args):
+        """ A function that stores all added nodes. """
+        mObjects.append(mObject)
+
+    # Create a callback to listen for new nodes.
+    callback = om2.MDGMessage.addNodeAddedCallback(addNode, 'dependNode')
+    try:
+        # Import the file
+        cmds.unloadPlugin('fbxmaya')
+        cmds.loadPlugin('fbxmaya')
+        mel.eval('FBXImportMode -v %s' % ('exmerge' if update else 'add'))
+        mel.eval('FBXImportFillTimeline -v true')
+        mel.eval('FBXImport -f "%s"' % filepath.replace('\\', '/'))
+    finally:
+        # Always remove the callback
+        om2.MMessage.removeCallback(callback)
+
+    # Convert mObjects to node names
+    nodes = set()
+    for mObject in mObjects:
+        if mObject.isNull():
+            continue
+        if mObject.hasFn(om2.MFn.kDagNode):
+            name = om2.MFnDagNode(mObject).fullPathName()
+        else:
+            name = om2.MFnDependencyNode(mObject).name()
+        if cmds.objExists(name):
+            nodes.add(name)
+
+    return list(nodes)
 
 
 def exportFbx(nodes, path):
@@ -172,4 +225,103 @@ def exportAnimation():
     finally:
         cmds.undoInfo(closeChunk=True)
         cmds.undo()
+
+
+def importMesh(filepath):
+    """
+    Imports a mesh from a nif file.
+    """
+
+    # Convert NIF files to fbx
+    if filepath.endswith('.nif'):
+        ckcmd.exportfbx(filepath, os.path.dirname(filepath))
+        filepath = filepath.replace('.nif', '.fbx')
+
+    # Import fbx
+    nodes = importFbx(filepath, update=False)
+
+    # Remove rigid bodies
+    for node in nodes:
+        if node.endswith('_rb'):
+            cmds.delete(node)
+
+    return nodes
+
+
+def convertTexture(filepath, format='dds'):
+    """
+    Runs imagemagick to convert a texture to the specified format.
+
+    Args:
+        filepath(str): A texture filepath.
+        format(str): The file extension to convert to.
+
+    Returns:
+        str: The output file path.
+    """
+    outpath = '%s.%s' % (filepath.split('.')[0], format.split('.')[-1])
+    command = '%s "%s" "%s"' % (os.path.join(IMAGE_MAGICK_DIR, 'convert.exe'), filepath, outpath)
+    ckcmd.run_command(command, directory=os.path.dirname(filepath))
+    return outpath
+
+
+def importTextures(meshes, albedo, normal, name='skywind'):
+    """
+    Imports textures into the current project and assigns them to selected meshes.
+
+    Args:
+        meshes(list): A list of meshes to assign textures to.
+        albedo(str): An albedo filepath.
+        normal(str): An optional normal map filepath.
+        name(str): A prefix for each shader node.
+    """
+
+    # Sanitize paths
+    albedo = ckproject.santizePath(albedo)
+    normal = ckproject.santizePath(normal)
+
+    # Copy textures to texture directory
+    textureDirectory = ckproject.getProject().getFullPath(ckproject.getProject().getTextureDirectory())
+    if textureDirectory not in albedo:
+        newpath = os.path.join(textureDirectory, os.path.basename(albedo))
+        shutil.copyfile(albedo, newpath)
+        albedo = newpath
+    if textureDirectory not in normal:
+        newpath = os.path.join(textureDirectory, os.path.basename(normal))
+        shutil.copyfile(normal, newpath)
+        normal = newpath
+
+    # Convert textures from dds
+    if albedo.endswith('.dds'):
+        albedo = convertTexture(albedo, 'png')
+    if normal.endswith('.dds'):
+        normal = convertTexture(normal, 'png')
+
+    # Create shader
+    shader = cmds.shadingNode('blinn', name='%s_blinn' % name, asShader=True)
+    shadingGroup = cmds.sets(name='%sSG' % shader, empty=True, renderable=True, noSurfaceShader=True)
+    cmds.connectAttr('%s.outColor' % shader, '%s.surfaceShader' % shadingGroup)
+    for channel in ['R', 'G', 'B']:
+        cmds.setAttr('%s.ambientColor%s' % (shader, channel), 1)
+    cmds.setAttr('%s.specularRollOff' % shader, 0.3)
+    cmds.setAttr('%s.eccentricity' % shader, 0.2)
+
+    # Add textures
+    albedoNode = cmds.shadingNode("file", asTexture=True, n="%s_albedo" % name)
+    cmds.setAttr('%s.fileTextureName' % albedoNode, albedo, type="string")
+    cmds.connectAttr('%s.outColor' % albedoNode, '%s.color' % shader)
+
+    normalNode = cmds.shadingNode("file", asTexture=True, n="%s_normal" % name)
+    cmds.setAttr('%s.fileTextureName' % normalNode, normal, type="string")
+    bumpNode = cmds.createNode('bump2d')
+    cmds.connectAttr('%s.outAlpha' % normalNode, '%s.bumpValue' % bumpNode)
+    cmds.setAttr('%s.bumpInterp' % bumpNode, 1)
+    cmds.connectAttr('%s.outNormal' % bumpNode, '%s.normalCamera' % shader)
+
+    for mesh in meshes:
+        cmds.sets(mesh, e=True, forceElement=shadingGroup)
+
+
+class FbxException(BaseException):
+    """ Raised to indicate an invalid fbx file. """
 

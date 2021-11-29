@@ -19,7 +19,7 @@ def getDirectoryDialog(directory=None):
     raise FilePathException('No directory selected.')
 
 
-def getFileDialog(directory=None, fileTypes=None):
+def getFileDialog(directory=None, fileTypes=None, title=None):
     """
     Prompts the user for a file path.
 
@@ -34,8 +34,7 @@ def getFileDialog(directory=None, fileTypes=None):
         fileTypes = fileTypes if isinstance(fileTypes, (list, tuple)) else [fileTypes]
         fileTypes = [filetype.split('.')[-1] for filetype in fileTypes]
         fileTypes = ';;'.join(['*.%s' % filetype for filetype in fileTypes])
-
-    files = cmds.fileDialog2(dir=directory, fileMode=1, fileFilter=fileTypes) or []
+    files = cmds.fileDialog2(dir=directory, fileMode=1, fileFilter=fileTypes, caption=title) or []
     for filename in files:
         return filename
     raise FilePathException('No file selected.')
