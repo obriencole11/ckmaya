@@ -25,6 +25,7 @@ def santizePath(path):
         path = path[:-1]
     return path
 
+
 def addRecentProject(directory):
     """
     Adds a recent project to the recent project cache.
@@ -67,6 +68,7 @@ class Project(object):
     importCacheTxt = 'importcache.txt'
     importAnimationDir = 'importanimations'
     importBehaviorDir = 'importbehaviors'
+    controlJointMapping = 'controlJointMapping'
 
     # Scene Files
     skeletonSceneFile = 'skeleton.ma'
@@ -165,7 +167,10 @@ class Project(object):
         Returns:
             (...): The dictionary value.
         """
-        return santizePath(self.getMetadata().get(key, default))
+        data = self.getMetadata().get(key, default)
+        if isinstance(data, str):
+            data = santizePath(data)
+        return data
 
     def setMetadataKey(self, key, value):
         """
@@ -176,7 +181,9 @@ class Project(object):
             value(...): A metadata value.
         """
         data = self.getMetadata()
-        data[key] = santizePath(value)
+        if isinstance(value, str):
+            value = santizePath(value)
+        data[key] = value
         self.setMetadata(data)
 
     def getProjectPath(self, path):
@@ -236,115 +243,16 @@ class Project(object):
     def getExportCacheFile(self): return self.getMetadataKey(self.exportCacheTxt, '')
     def getExportAnimationDataDirectory(self): return self.getMetadataKey(self.exportAnimationDataDir, '')
 
-    # --- TODO Remove ----- #
-
-    def getProjectName(self):
-        """
-        Gets the project name from the metadata.
-
-        Returns:
-            str: A project name.
-        """
-        return self.getMetadataKey('name', None)
-
-    def setProjectName(self, name):
-        """
-        Sets the project name.
-
-        Args:
-            name(str): A project name.
-        """
-        self.setMetadataKey('name', name)
-
-    def getFirstPerson(self):
-        """
-        Determines if the project is a first person project.
-
-        Returns:
-            bool: Whether first person is enabled.
-        """
-        return self.getMetadataKey('firstperson', False)
-
-    def setFirstPerson(self, enabled):
-        """
-        Sets whether first person is enabled for the project.
-
-        Args:
-            enabled(bool): Whether first person is enabled.
-        """
-        self.setMetadataKey('firstperson', enabled)
-
-    def getSceneDirectory(self):
-        """
-        Gets the Maya scene directory.
-
-        Returns:
-            str: A directory path.
-        """
-        return os.path.join(self.getDirectory(), 'scenes')
-
-    def getAnimationScenes(self):
-        """
-        Gets all animation scene files.
-
-        Returns:
-            list: A list of animation scenes.
-        """
-        if not os.path.exists(self.getAnimationSceneDirectory()):
-            return []
-        scenes = []
-        for root, dirs, files in os.walk(self.getAnimationSceneDirectory()):
-            for file in files:
-                if file.endswith('.ma') or file.endswith('.mb'):
-                    scenes.append(os.path.join(root, file))
-        return scenes
-
-    def getDataDirectory(self):
-        """
-        Gets the export data directory.
-
-        Returns:
-            str: A directory path.
-        """
-        return os.path.join(self.getDirectory(), 'data')
-
-    def getMeshDirectory(self):
-        """
-        Gets the meshes directory.
-
-        Returns:
-            str: A directory path.
-        """
-        return os.path.join(self.getDataDirectory(), 'meshes')
-
-    def getCharacterAssetsDirectory(self):
-        """
-        Gets the character assets directory.
-
-        Returns:
-            str: A directory path.
-        """
-        if self.getProjectName() is None:
-            return None
-        return os.path.join(self.getMeshDirectory(), 'actors', self.getProjectName(), 'character assets')
-
-    def getSkeletonHkx(self):
-        """
-        Gets the skeleton hkx file.
-
-        Returns:
-            str: A file path.
-        """
-        return self._getFile(self.getCharacterAssetsDirectory(), 'skeleton.hkx')
-
-    def getSkeletonNif(self):
-        """
-        Gets the skeleton nif file.
-
-        Returns:
-            str: A file path.
-        """
-        return self._getFile(self.getCharacterAssetsDirectory(), 'skeleton.nif')
+    # ---- Control Joints ---- #
+    def getControlJointMapping(self): return self.getMetadataKey(self.controlJointMapping, {})
+    def setControlJointMapping(self, mapping): self.setMetadataKey(self.controlJointMapping, mapping)
+    def setControlJoint(self, control, joint):
+        mapping = self.getControlJointMapping()
+        mapping[control] = joint
+        self.setControlJointMapping(mapping)
+    def getControlJoint(self, control): return self.getControlJointMapping().get(control)
+    def getJointControls(self, joint):
+        return [control for control, _joint in self.getControlJointMapping().items() if joint == _joint]
 
 
 def getSceneName():

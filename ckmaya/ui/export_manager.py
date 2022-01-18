@@ -5,7 +5,8 @@ from functools import partial
 from maya import cmds
 import maya.api.OpenMaya as om2
 from ckmaya.core import ckproject, ckcore
-from ckmaya.ui.core import MayaWindow, getDirectoryDialog, getFileDialog, getNameDialog, saveChangesDialog
+from ckmaya.ui.core import MayaWindow, getDirectoryDialog, getFileDialog, getNameDialog, saveChangesDialog, \
+    replaceFileDialog, getFilesDialog
 from ckmaya.thirdparty.Qt import QtWidgets, QtGui, QtCore
 
 
@@ -346,26 +347,183 @@ class MetadataTab(ProjectTab):
         extraGroupLayout.addWidget(self._textureDirectoryBox)
 
 
+class EditMappingDialog2(QtWidgets.QDialog):
+
+    SPLITTER = ' --> '
+    SRCROLE = QtCore.Qt.UserRole + 1
+    DSTROLE = QtCore.Qt.UserRole + 2
+
+    def __init__(self, model, parent=None):
+        super(EditMappingDialog2, self).__init__(parent)
+        self.setWindowTitle('Edit Mapping')
+        self.root = model.getData(ckproject.Project.exportJointName)
+        self.model = model
+
+        # Main
+        mainLayout = QtWidgets.QVBoxLayout()
+        self.setLayout(mainLayout)
+
+        # Joint label
+        rootLabel = QtWidgets.QLabel('Root Joint: %s' % self.root)
+        mainLayout.addWidget(rootLabel)
+
+        # Mapping List
+        self.mappingList = QtWidgets.QListWidget(self)
+        self.mappingList.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        mainLayout.addWidget(self.mappingList)
+
+        # Buttons
+        buttonLayout = QtWidgets.QHBoxLayout()
+        mainLayout.addLayout(buttonLayout)
+        connectButton = QtWidgets.QPushButton('Map Selected', self)
+        connectButton.pressed.connect(self.connectSelected)
+        buttonLayout.addWidget(connectButton)
+        disconnectButton = QtWidgets.QPushButton('Remove Selected', self)
+        disconnectButton.pressed.connect(self.disconnectSelected)
+        buttonLayout.addWidget(disconnectButton)
+
+        self.loadMapping()
+
+    def loadMapping(self):
+        mappings = self.model.getData(ckproject.Project.controlJointMapping)
+        if isinstance(mappings, (list, tuple)):
+            self.setMappings(mappings)
+
+    def getMapping(self):
+        mappings = []
+        for row in range(self.mappingList.count()):
+            item = self.mappingList.item(row)
+            src = item.data(self.SRCROLE)
+            dst = item.data(self.DSTROLE)
+            mappings.append((src, dst))
+        return mappings
+
+    def setMappings(self, mappings):
+        self.mappingList.clear()
+        for src, dst in mappings:
+            self.addMapping(src, dst)
+
+    def addMapping(self, src, dst):
+        item = QtWidgets.QListWidgetItem('%s%s%s' % (src.split('|')[-1], self.SPLITTER, dst.split('|')[-1]))
+        item.setData(self.SRCROLE, src)
+        item.setData(self.DSTROLE, dst)
+        self.mappingList.addItem(item)
+
+    def connectSelected(self):
+        src, dst = ckcore.getJointMappingFromSelection(self.root)
+        if src is None or dst is None:
+            return
+        self.addMapping(src, dst)
+        self.updateMapping()
+
+    def disconnectSelected(self):
+        for index in reversed(self.mappingList.selectedIndexes()):
+            self.mappingList.takeItem(index.row())
+        self.updateMapping()
+
+    def updateMapping(self):
+        self.model.setData(ckproject.Project.controlJointMapping, self.getMapping())
+
+
+class EditMappingDialog(QtWidgets.QDialog):
+
+    SPLITTER = ' --> '
+    SRCROLE = QtCore.Qt.UserRole + 1
+    DSTROLE = QtCore.Qt.UserRole + 2
+
+    def __init__(self, model, parent=None):
+        super(EditMappingDialog, self).__init__(parent)
+        self.setWindowTitle('Edit Mapping')
+        self.root = model.getData(ckproject.Project.exportJointName)
+        self.model = model
+
+        # Main
+        mainLayout = QtWidgets.QVBoxLayout()
+        self.setLayout(mainLayout)
+
+        # Joint label
+        rootLabel = QtWidgets.QLabel('Root Joint: %s' % self.root)
+        mainLayout.addWidget(rootLabel)
+
+        # Mapping List
+        self.mappingList = QtWidgets.QTableWidget(self)
+        self.mappingList.setColumnCount(3)
+        self.mappingList.verticalHeader().hide()
+        self.mappingList.setHorizontalHeaderLabels(['Control', 'Joint', ''])
+        self.mappingList.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
+        self.mappingList.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
+        self.mappingList.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
+        mainLayout.addWidget(self.mappingList)
+
+        # Buttons
+        buttonLayout = QtWidgets.QHBoxLayout()
+        mainLayout.addLayout(buttonLayout)
+        mapButton = QtWidgets.QPushButton('Map Selected', self)
+        mapButton.pressed.connect(self.mapSelected)
+        buttonLayout.addWidget(mapButton)
+
+    def loadMapping(self):
+        self.mappingList.clearContents()
+        self.mappingList.setRowCount(0)
+        for i, (control, joint) in enumerate(ckproject.getProject().getControlJointMapping().items()):
+            self.mappingList.insertRow(i)
+            self.mappingList.setItem(i, 0, QtWidgets.QTableWidgetItem(control))
+            self.mappingList.setItem(i, 1, QtWidgets.QTableWidgetItem(joint))
+
+            deleteButton = QtWidgets.QPushButton(self)
+            deleteButton.setIcon(QtGui.QIcon('://delete.png'))
+            deleteButton.setFlat(True)
+            deleteButton.pressed.connect(partial(self.removeMapping, i))
+            self.mappingList.setCellWidget(i, 2, deleteButton)
+
+    def saveMapping(self):
+        mapping = {}
+        for i in range(self.mappingList.rowCount()):
+            control = self.mappingList.item(i, 0).text()
+            joint = self.mappingList.item(i, 1).text()
+            mapping[control] = joint
+        ckproject.getProject().setControlJointMapping(mapping)
+        self.loadMapping()
+
+    def removeMapping(self, row):
+        self.mappingList.removeRow(row)
+        self.saveMapping()
+
+    def mapSelected(self):
+        ckcore.createJointControlMapping()
+        self.loadMapping()
+
+
 class AnimationTab(ProjectTab):
     """ An export tab for animations files. """
 
     def __init__(self, model, parent=None):
         super(AnimationTab, self).__init__(model, parent=parent)
 
-        # importGroup, importGroupLayout = self.addGroupBox('Import Animation')
-        # importGroup.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Minimum)
-        # importAnimationDirBox = ProjectDirectoryBox('Import Directory', ckproject.Project.importAnimationDir, model,
-        #                                               parent=self)
-        # importGroupLayout.addWidget(importAnimationDirBox)
-        # importAnimationBox = ProjectListBox('Animations', ckproject.Project.importAnimationDir, model,
-        #                                     fileTypes=['hkx'], parent=self)
-        # importGroupLayout.addWidget(importAnimationBox)
-        #
-        # importButtonLayout = QtWidgets.QHBoxLayout()
-        # importGroupLayout.addLayout(importButtonLayout)
-        # importSelectedButton = QtWidgets.QPushButton('Import Selected', self)
-        # importSelectedButton.pressed.connect(self.importSelected)
-        # importButtonLayout.addWidget(importSelectedButton)
+        importGroup, importGroupLayout = self.addGroupBox('Import Animation')
+        importGroup.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Minimum)
+
+        importButtonLayout = QtWidgets.QHBoxLayout()
+        importGroupLayout.addLayout(importButtonLayout)
+
+        # Import Animation
+        self.importAnimationButton = QtWidgets.QPushButton('Import Animation(s)', self)
+        self.importAnimationButton.pressed.connect(self.importAnimation)
+        importButtonLayout.addWidget(self.importAnimationButton)
+        editMappingButton = QtWidgets.QPushButton('Edit Mapping', self)
+        editMappingButton.pressed.connect(self.editMapping)
+        editMappingButton.setSizePolicy(QtWidgets.QSizePolicy.Maximum, QtWidgets.QSizePolicy.Preferred)
+        importButtonLayout.addWidget(editMappingButton)
+
+        # Import RootMotion
+        otherImportButtonLayout = QtWidgets.QHBoxLayout()
+        importGroupLayout.addLayout(otherImportButtonLayout)
+        importRootMotionButton = QtWidgets.QPushButton('Import Root Motion', self)
+        importRootMotionButton.pressed.connect(self.importRootMotion)
+        otherImportButtonLayout.addWidget(importRootMotionButton)
+        importTagsButton = QtWidgets.QPushButton('Import Tags', self)
+        importTagsButton.pressed.connect(self.importTags)
+        otherImportButtonLayout.addWidget(importTagsButton)
 
         exportGroup, exportGroupLayout = self.addGroupBox('Export Animation')
         exportGroup.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Minimum)
@@ -392,7 +550,33 @@ class AnimationTab(ProjectTab):
         self.exportButton.pressed.connect(self.exportScene)
         lowerButtonLayout.addWidget(self.exportButton)
 
-    def importSelected(self):
+        self.mappingWindow = EditMappingDialog(model, parent=self)
+
+    def importAnimation(self):
+        try:
+            if saveChangesDialog():
+                project = ckproject.getProject()
+                animations = getFilesDialog(
+                    directory=project.getDirectory(),
+                    title='Import Animation',
+                    fileTypes=['fbx', 'hkx']
+                )
+                for animation in animations:
+                    directory = project.getFullPath(project.getAnimationSceneDirectory())
+                    newAnimation = os.path.join(directory, '.'.join([os.path.basename(animation).split('.')[0], 'ma']))
+                    if replaceFileDialog(newAnimation):
+                        ckcore.importAnimation(animation)
+        finally:
+            self.importAnimationButton.setDown(False)
+
+    def editMapping(self):
+        self.mappingWindow.loadMapping()
+        self.mappingWindow.show()
+
+    def importRootMotion(self):
+        return
+
+    def importTags(self):
         return
 
     def exportSelected(self):
@@ -470,6 +654,7 @@ class ProjectModel(QtCore.QObject):
         self.setData(ckproject.Project.importAnimationDir, self._project.getImportAnimationDirectory())
         self.setData(ckproject.Project.importBehaviorDir, self._project.getImportBehaviorDirectory())
         self.setData(ckproject.Project.importCacheTxt, self._project.getImportCacheFile())
+        self.setData(ckproject.Project.controlJointMapping, self._project.getControlJointMapping())
 
         # Scenes
         self.setData(ckproject.Project.skeletonSceneFile, self._project.getSkeletonScene())
@@ -508,9 +693,8 @@ class ProjectModel(QtCore.QObject):
             key(str): The data key.
             value(object): The data value.
         """
-        self._project.setMetadataKey(key, str(value))
+        self._project.setMetadataKey(key, value)
         self._data[key] = value
-        print (repr(key), repr(value))
         self.dataChanged.emit(key, value)
 
 

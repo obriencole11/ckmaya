@@ -1,4 +1,5 @@
 """ Core UI functions. """
+import os
 from maya import cmds
 from ckmaya.thirdparty.Qt import QtWidgets, QtCore
 
@@ -38,6 +39,27 @@ def getFileDialog(directory=None, fileTypes=None, title=None):
     for filename in files:
         return filename
     raise FilePathException('No file selected.')
+
+
+def getFilesDialog(directory=None, fileTypes=None, title=None):
+    """
+    Prompts the user for list of files.
+
+    Args:
+        directory(str): An optional starting directory path.
+        fileTypes(list): A list of accepted file types.
+
+    Returns:
+        str: A file path.
+    """
+    if fileTypes is not None:
+        fileTypes = fileTypes if isinstance(fileTypes, (list, tuple)) else [fileTypes]
+        fileTypes = [filetype.split('.')[-1] for filetype in fileTypes]
+        fileTypes = 'Files (%s)' % ' '.join(['*.%s' % filetype for filetype in fileTypes])
+    files = cmds.fileDialog2(dir=directory, fileMode=4, fileFilter=fileTypes, caption=title) or []
+    if len(files) == 0:
+        raise FilePathException('No file selected.')
+    return files
 
 
 def getNameDialog(title='Name Dialog', message='Enter Name', text=''):
@@ -86,6 +108,28 @@ def saveChangesDialog():
     return True
 
 
+def replaceFileDialog(filepath):
+    """
+    Prompts the user to replace an existing file dialog.
+    If the filepath does not exist, the prompt will not appear.
+
+    Returns:
+        bool: Whether to continue or not.
+    """
+    if not os.path.exists(filepath):
+        return True
+    result = cmds.confirmDialog(
+        title='Replace File Dialog',
+        message='The file "%s" already exists. Do you want to replace it?' % filepath,
+        button=["Replace", "Cancel"],
+        defaultButton='Replace',
+        cancelButton='Cancel'
+    )
+    if result == 'Cancel':
+        return False
+    return True
+
+
 def getMayaMainWindow():
     """
     Wraps the maya main window as a Qt object.
@@ -113,6 +157,7 @@ class MayaWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super(MayaWindow, self).__init__(parent=getMayaMainWindow())
         self.settings = QtCore.QSettings('Skywind', self.__class__.__name__)
+        self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
 
         # Add a central widget and layout
         self._mainWidget = QtWidgets.QWidget(self)
