@@ -24,8 +24,8 @@ def run_command(command, directory='/'):
         command(str): A command string to run.
         directory(str): A directory to run the command in.
     """
-    command = command.replace('\\\\', '\\').replace('\\', '/')
-    directory = directory.replace('\\\\', '\\').replace('\\', '/')
+    command = command.replace('\\\\', '\\')
+    directory = directory.replace('\\\\', '\\')
     print (command)
     with open(os.path.join(tempfile.gettempdir(), 'test.log'), 'w') as f:
         if ispython3():
@@ -194,6 +194,7 @@ def convertHkx(hkx, xml):
         str: The executed command string.
     """
     output_directory = os.path.dirname(xml)
+    xml = os.path.basename(xml)
     command = '%s convert "%s" -o "%s" -v:AMD64 ' % (CKCMD, hkx, xml)
     run_command(command, directory=output_directory)
     return command

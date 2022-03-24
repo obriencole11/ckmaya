@@ -58,19 +58,42 @@ def bindSkeletons(srcRoot, dstRoot):
     return constraints
 
 
-def bakeSkeleton(root):
+def getDefaultTimeRange():
+    """
+    Gets the default start and end time.
+
+    Returns:
+        float, float: The start and end time.
+    """
+    return cmds.playbackOptions(minTime=True, q=True), cmds.playbackOptions(maxTime=True, q=True)
+
+
+def getSkeleton(root):
+    """
+    Gets the entire skeletal hierarchy given a root joint.
+
+    Args:
+        root(str): A root joint name.
+
+    Returns:
+        list: A list of joint names.
+    """
+    return [root] + cmds.listRelatives(root, type='joint', ad=True, fullPath=True) or []
+
+
+def bakeSkeleton(root, time=None):
     """
     Bakes a skeleton along the current timeline.
 
     Args:
         root(str): A root joint.
+        time(tuple): The start and end times.
     """
     try:
         cmds.refresh(su=True)
-        start = cmds.playbackOptions(minTime=True, q=True)
-        end = cmds.playbackOptions(maxTime=True, q=True)
-        joints = [root] + cmds.listRelatives(root, type='joint', ad=True, fullPath=True) or []
-        cmds.bakeResults(joints, at=['tx', 'ty', 'tz', 'rx', 'ry', 'rz'], t=(start, end), simulation=True)
+        time = time or getDefaultTimeRange()
+        joints = getSkeleton(root)
+        cmds.bakeResults(joints, at=['tx', 'ty', 'tz', 'rx', 'ry', 'rz'], t=time, simulation=True)
     finally:
         cmds.refresh(su=False)
 
@@ -342,10 +365,31 @@ def importAnimation(animation, animationTags=None):
     cmds.file(save=True, type="mayaAscii")
 
 
-def exportAnimation():
+def moveSkeletonAnimation(root, oldTime, newTime):
+    """
+    Moves keyframes for a skeleton.
+
+    Args:
+        root(str): A root joint.
+        oldTime(tuple): The old start and end times.
+        newTime(tuple): The new start and end times.
+    """
+    joints = getSkeleton(root)
+    for joint in joints:
+        for attribute in ['tx', 'ty', 'tz', 'rx', 'ry', 'rz']:
+            cmds.keyframe('%s.%s' % (joint, attribute), relative=True, timeChange=newTime[0] - oldTime[0], e=True)
+
+
+def exportAnimation(name=None, time=None):
     """
     Exports the current scene animation.
+
+    Args:
+        name(str): The export animation name.
+        time(tuple): The start and end time range to export.
     """
+    _start, _end = getDefaultTimeRange()
+    start, end = time if time is not None else getDefaultTimeRange()
     project = ckproject.getProject()
     exportSkeletonHkxFile = project.getFullPath(project.getExportSkeletonHkx())
     exportBehaviorDir = project.getFullPath(project.getExportBehaviorDirectory())
@@ -353,7 +397,7 @@ def exportAnimation():
 
     # Get the export animation file
     exportAnimationDir = project.getFullPath(project.getExportAnimationDirectory())
-    animationName = os.path.basename(ckproject.getSceneName()).split('.')[0]
+    animationName = name or os.path.basename(ckproject.getSceneName()).split('.')[0]
     exportAnimationFbxFile = os.path.join(exportAnimationDir, '%s.fbx' % animationName)
     exportAnimationHkxFile = os.path.join(exportAnimationDir, '%s.hkx' % animationName)
 
@@ -363,16 +407,16 @@ def exportAnimation():
     # Get the export joint
     if exportJointName == '':
         raise ValueError('Invalid export node name "%s"' % exportJointName)
-    exportJoints = []
-    for joint in cmds.ls('*:%s' % exportJointName) or []:
-        exportJoints.append(joint)
-    for joint in cmds.ls(exportJointName) or []:
-        exportJoints.append(joint)
+    exportJoints = set()
+    for joint in cmds.ls('*:%s' % exportJointName, long=True) or []:
+        exportJoints.add(joint)
+    for joint in cmds.ls(exportJointName, long=True) or []:
+        exportJoints.add(joint)
     if len(exportJoints) == 0:
         raise ValueError('Export node "%s" does not exist.' % exportJointName)
     if len(exportJoints) > 1:
         raise ValueError('Multiple export nodes found with name "%s"' % exportJointName)
-    exportJoint = exportJoints[0]
+    exportJoint = list(exportJoints)[0]
 
     try:
         cmds.undoInfo(openChunk=True)
@@ -386,10 +430,15 @@ def exportAnimation():
 
         # Bind and Bake skeletons
         constraints = bindSkeletons(exportJoint, dupExportJoint)
-        bakeSkeleton(dupExportJoint)
+        bakeSkeleton(dupExportJoint, time=(start, end))
         cmds.delete(constraints)
 
+        # Move Keys to start at frame 0
+        exportStart, exportEnd = 0, end - start
+        moveSkeletonAnimation(dupExportJoint, (start, end), (exportStart, exportEnd))
+
         # Export animation
+        cmds.playbackOptions(minTime=exportStart, maxTime=exportEnd)
         exportFbx([dupExportJoint], exportAnimationFbxFile)
 
         # Copy Animation Data Files To Root
@@ -415,6 +464,7 @@ def exportAnimation():
     finally:
         cmds.undoInfo(closeChunk=True)
         cmds.undo()
+        cmds.playbackOptions(minTime=_start, maxTime=_end)
 
 
 def importMesh(filepath):
