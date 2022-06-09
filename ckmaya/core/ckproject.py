@@ -79,8 +79,10 @@ class Project(object):
 
     # Export Files
     exportJointName = 'exportjointname'
+    exportMeshName = 'exportskinname'
     exportSkeletonHkx = 'exportskeleton.hkx'
     exportSkeletonNif = 'exportskeleton.nif'
+    exportSkinNif = 'exportskin.nif'
     exportCacheTxt = 'exportcache.txt'
     exportAnimationDir = 'exportanimations'
     exportBehaviorDir = 'exportbehaviors'
@@ -202,18 +204,19 @@ class Project(object):
             path = '/'.join(path.split('/')[length:])
         return path
 
-    def getFullPath(self, path):
+    def getFullPath(self, path, existing=True):
         """
         Converts a project local path to a full path.
 
         Args:
             path(str): A file or directory path.
+            existing(bool): Whether to check if the full path exists.
 
         Returns:
             str: The full file or directory path.
         """
         projectPath = santizePath(os.path.join(self.getDirectory(), path))
-        if not os.path.exists(projectPath):
+        if existing and not os.path.exists(projectPath):
             raise BaseException('%s does not exist.' % projectPath)
         return projectPath
 
@@ -237,8 +240,10 @@ class Project(object):
 
     def getExportSkeletonHkx(self): return self.getMetadataKey(self.exportSkeletonHkx, '')
     def getExportSkeletonNif(self): return self.getMetadataKey(self.exportSkeletonNif, '')
+    def getExportSkinNif(self): return self.getMetadataKey(self.exportSkinNif, '')
     def getExportAnimationDirectory(self): return self.getMetadataKey(self.exportAnimationDir, '')
     def getExportJointName(self): return self.getMetadataKey(self.exportJointName, '')
+    def getExportMeshName(self): return self.getMetadataKey(self.exportMeshName, '')
     def getExportBehaviorDirectory(self): return self.getMetadataKey(self.exportBehaviorDir, '')
     def getExportCacheFile(self): return self.getMetadataKey(self.exportCacheTxt, '')
     def getExportAnimationDataDirectory(self): return self.getMetadataKey(self.exportAnimationDataDir, '')

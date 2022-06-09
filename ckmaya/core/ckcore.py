@@ -2,8 +2,8 @@ import os
 import shutil
 import tempfile
 
-from ckmaya.core import ckcmd
-from ckmaya.core import ckproject
+from . import ckcmd
+from . import ckproject
 import maya.api.OpenMaya as om2
 from maya import cmds, mel
 
@@ -79,6 +79,41 @@ def getSkeleton(root):
         list: A list of joint names.
     """
     return [root] + cmds.listRelatives(root, type='joint', ad=True, fullPath=True) or []
+
+
+def getRootJoint(nodes=None, namespace=None):
+    """
+    Attempts to find a root joint in the current scene using the export joint name project setting.
+
+    Args:
+        nodes(list): An optional list of nodes to search.
+        namespace(str): An optional namespace to use.
+
+    Returns:
+        str: The export joint name.
+    """
+    # Get the export joint name
+    project = ckproject.getProject()
+    exportJointName = project.getExportJointName()
+
+    if nodes is None:
+        # If an exact match exists, return that
+        if cmds.objExists(exportJointName):
+            return exportJointName
+
+        # Otherwise search for another match
+        exportJoints = cmds.ls('*:%s' % exportJointName, type='joint') or []
+        if len(exportJoints) == 1:
+            return exportJoints[0]
+
+        raise Exception('Could not find unique root joint with name "%s".' % exportJointName)
+
+    else:
+        # Otherwise search the nodes for the joint
+        for node in nodes:
+            if node.split('|')[-1].split(':')[-1] == exportJointName:
+                return node
+        raise Exception('Could not find root joint in nodes with name "%s"' % exportJointName)
 
 
 def bakeSkeleton(root, time=None):
@@ -183,7 +218,11 @@ def exportFbx(nodes, path):
 
         # Export and restore the original selection
         cmds.select(nodes)
-        mel.eval('FBXExport -f "%s" -s' % path.replace('\\', '/'))
+        command = 'FBXExport -f "%s" -s' % path.replace('\\', '/')
+        try:
+            mel.eval(command)
+        except RuntimeError:
+            raise RuntimeError('Error occurred during mel script: %s' % command)
 
     finally:
         cmds.undoInfo(closeChunk=True)
@@ -214,18 +253,8 @@ def importAnimationTags(animation):
     Args:
         animation(str): An animated fbx file.
     """
-    project = ckproject.getProject()
-    exportJointName = project.getExportJointName()
-
     # Find the destination export joint
-    dstJoint = None
-    if cmds.objExists(exportJointName):
-        dstJoint = exportJointName
-    else:
-        for node in cmds.ls('*:%s' % exportJointName) or []:
-            dstJoint = node
-    if dstJoint is None:
-        raise BaseException('Could not fine destination root joint in scene.')
+    dstJoint = getRootJoint()
 
     importNodes = []
     try:
@@ -233,13 +262,7 @@ def importAnimationTags(animation):
         importNodes = importFbx(animation, update=False)
 
         # Find the source joint
-        srcJoint = None
-        for node in importNodes:
-            name = node.split('|')[-1]
-            if name == exportJointName:
-                srcJoint = node
-        if srcJoint is None:
-            raise BaseException('Could not fine source root joint in imported animation.')
+        srcJoint = getRootJoint(nodes=importNodes)
 
         # Transfer tags
         copyTagAttribiutes(srcJoint, dstJoint)
@@ -444,17 +467,25 @@ def exportAnimation(name=None, time=None):
         # Copy Animation Data Files To Root
         animationDataDir = project.getFullPath(project.getExportAnimationDataDirectory())
         animationDataFiles = []
-        for filename in os.listdir(animationDataDir):
-            srcPath = os.path.join(animationDataDir, filename)
-            dstPath = os.path.join(project.getDirectory(), filename)
-            animationDataFiles.append((srcPath, dstPath))
-            shutil.copyfile(srcPath, dstPath)
+        # for filename in os.listdir(animationDataDir):
+        #     srcPath = os.path.join(animationDataDir, filename)
+        #     dstPath = os.path.join(project.getDirectory(), filename)
+        #     animationDataFiles.append((srcPath, dstPath))
+        #     shutil.copyfile(srcPath, dstPath)
 
         # Run ckcmd on the fbx file
         ckcmd.importanimation(
             exportSkeletonHkxFile, exportAnimationFbxFile,
             exportAnimationDir, cache_txt=exportCacheFile, behavior_directory=exportBehaviorDir
         )
+
+        # Move legacy files to their own directory
+        legacyPath = exportAnimationHkxFile.replace('.hkx', '_le.hkx')
+        if os.path.exists(legacyPath):
+            legacyDir = os.path.join(os.path.dirname(legacyPath), 'le')
+            if not os.path.exists(legacyDir):
+                os.makedirs(legacyDir)
+            shutil.move(legacyPath, os.path.join(legacyDir, os.path.basename(legacyPath)))
 
         # Copy Data Files Back
         for srcPath, dstPath in animationDataFiles:
@@ -645,6 +676,86 @@ def getJointMappingFromSelection(root):
         return None, None
 
     return transforms[0], joints[0]
+
+
+def exportSkin():
+    """
+    Exports the project mesh as a skyrim skin fbx.
+
+    Returns:
+        str: The exported file path.
+    """
+
+    # Get the project
+    project = ckproject.getProject()
+
+    # Get mesh to export
+    mesh = project.getExportMeshName()
+    if not cmds.objExists(mesh):
+        raise Exception('Mesh "%s" is not unique or does not exist' % mesh)
+
+    # Get destination path
+    path = project.getFullPath(project.getExportSkinNif(), existing=False)
+    if path == '':
+        raise Exception('Invalid skin path "%s"' % path)
+    path = path.split('.')[0] + '.fbx'
+
+    # Get the export skeleton
+    exportRootJoint = getRootJoint()
+    exportSkeleton = getSkeleton(exportRootJoint)
+
+    # Check the mesh is skinned
+    clusters = cmds.ls(cmds.listHistory(mesh), type='skinCluster') or []
+    if len(clusters) == 0:
+        raise Exception('%s is not skinned.' % mesh)
+    cluster = clusters[0]
+
+    # Check max influences
+    vertices = cmds.polyListComponentConversion(mesh, toVertex=True)
+    vertices = cmds.filterExpand(vertices, selectionMask=31)  # polygon vertex
+    for vert in vertices:
+        joints = cmds.skinPercent(cluster, vert, query=True, ignoreBelow=0.000001, transform=None)
+        if len(joints) > 4:  # Skyrim max influences
+            raise Exception('Vertex %s has more than 4 influences.' % vert)
+
+    try:
+        cmds.undoInfo(openChunk=True)
+
+        # Set vertex colors to white
+        cmds.polyColorPerVertex(mesh, colorRGB=[1, 1, 1], a=1)
+
+        # To fix certain issues with skinning we need to mess with the normals
+        cmds.bakePartialHistory(mesh, prePostDeformers=True)  # Delete Non-deformer history
+        cmds.polyNormalPerVertex(mesh, unFreezeNormal=True)  # Unlock the normals
+        cmds.polySoftEdge(mesh, a=180)  # Soften the normals
+        cmds.bakePartialHistory(mesh, prePostDeformers=True)  # Delete Non-deformer history
+        cmds.polyNormalPerVertex(mesh, freezeNormal=True)  # Lock the normals
+        cmds.polySoftEdge(mesh, a=0)  # Harden the normals
+        cmds.bakePartialHistory(mesh, prePostDeformers=True)  # Delete Non-deformer history
+
+        # Remove all joint constraints
+        constraints = cmds.listRelatives(exportRootJoint, ad=True, type='constraint')
+        if len(constraints) > 0:
+            cmds.delete(constraints)
+
+        # Disconnect message connections
+        for joint in exportSkeleton:
+            messagePlug = '%s.message' % joint
+            for outputPlug in cmds.listConnections(messagePlug, s=True, d=False) or []:
+                cmds.disconnectAttr(messagePlug, outputPlug)
+
+        # Prune influences below 0.1
+        cmds.skinPercent(cluster, pruneWeights=0.1)
+
+        # Export the mesh as an fbx
+        exportFbx(exportSkeleton + [mesh], path=path)
+
+    finally:
+        cmds.undoInfo(closeChunk=True)
+        cmds.undo()
+
+    # Export nif
+    ckcmd.importskin(path, os.path.dirname(path))
 
 
 class FbxException(BaseException):

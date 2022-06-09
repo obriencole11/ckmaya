@@ -136,7 +136,7 @@ class ProjectFileBox(ProjectStringBox):
             directory = ckproject.getProject().getDirectory()
             if os.path.exists(self._lineEdit.text()):
                 directory = os.path.dirname(self._lineEdit.text())
-            filepath = getFileDialog(directory, self._fileTypes)
+            filepath = getFileDialog(directory, self._fileTypes, existing=False)
             filepath = ckproject.getProject().getProjectPath(filepath)
             self._model.setData(self._key, filepath)
         finally:
@@ -306,6 +306,11 @@ class MetadataTab(ProjectTab):
                                                 parent=self)
         sceneGroupLayout.addWidget(self._exportJointBox)
 
+        # Export Mesh
+        self._skinNameBox = ProjectNodeNameBox('Export Mesh', ckproject.Project.exportMeshName, model,
+                                               parent=self)
+        sceneGroupLayout.addWidget(self._skinNameBox)
+
         # ---- Export Group ---- #
         exportGroup, exportGroupLayout = self.addGroupBox('Export Files')
 
@@ -318,6 +323,11 @@ class MetadataTab(ProjectTab):
         self._exportSkeletonNifBox = ProjectFileBox('skeleton.nif', ckproject.Project.exportSkeletonNif, model,
                                                   fileTypes='nif', parent=self)
         exportGroupLayout.addWidget(self._exportSkeletonNifBox)
+
+        # Export Skin Hkx
+        self._exportSkinNifBox = ProjectFileBox('skin.nif', ckproject.Project.exportSkinNif, model,
+                                                  fileTypes='nif', parent=self)
+        exportGroupLayout.addWidget(self._exportSkinNifBox)
 
         # Export Animations
         self._exportAnimationBox = ProjectDirectoryBox('animations', ckproject.Project.exportAnimationDir, model,
@@ -521,9 +531,9 @@ class AnimationTab(ProjectTab):
         importRootMotionButton = QtWidgets.QPushButton('Import Root Motion', self)
         importRootMotionButton.pressed.connect(self.importRootMotion)
         otherImportButtonLayout.addWidget(importRootMotionButton)
-        importTagsButton = QtWidgets.QPushButton('Import Tags', self)
-        importTagsButton.pressed.connect(self.importTags)
-        otherImportButtonLayout.addWidget(importTagsButton)
+        self.importTagsButton = QtWidgets.QPushButton('Import Tags', self)
+        self.importTagsButton.pressed.connect(self.importTags)
+        otherImportButtonLayout.addWidget(self.importTagsButton)
 
         exportGroup, exportGroupLayout = self.addGroupBox('Export Animation')
         exportGroup.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Minimum)
@@ -577,11 +587,77 @@ class AnimationTab(ProjectTab):
         return
 
     def importTags(self):
-        return
+        try:
+            project = ckproject.getProject()
+            animation = getFileDialog(
+                directory=project.getDirectory(),
+                title='Import Tag Animation',
+                fileTypes=['fbx']
+            )
+            ckcore.importAnimationTags(animation)
+        finally:
+            self.importTagsButton.setDown(False)
 
     def exportSelected(self):
         self._export(self.exportAnimationBox.getSelectedFiles())
         self.exportSelectedButton.setDown(False)
+
+    def exportAll(self):
+        self._export(self.exportAnimationBox.getAllFiles())
+        self.exportAllButton.setDown(False)
+
+    def exportScene(self):
+        try:
+            QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+            ckcore.exportAnimation()
+            self.exportButton.setDown(False)
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+
+    def _export(self, files):
+        if len(files) == 0:
+            return
+
+        # Prompt user to save changes first
+        if not saveChangesDialog():
+            return
+
+        # Export each scene
+        for file in files:
+            try:
+                cmds.file(file, o=True, force=True, prompt=False)
+            except:
+                pass
+            ckcore.exportAnimation()
+
+
+class RiggingTab(ProjectTab):
+    """ An export tab for animations files. """
+
+    def __init__(self, model, parent=None):
+        super(RiggingTab, self).__init__(model, parent=parent)
+
+        exportGroup, exportGroupLayout = self.addGroupBox('Export')
+        exportGroup.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Minimum)
+
+        # Export Skin
+        self.exportSkinButton = QtWidgets.QPushButton('Export Skin', self)
+        self.exportSkinButton.pressed.connect(self.exportSkin)
+        exportGroupLayout.addWidget(self.exportSkinButton)
+
+        # Export Rig
+        self.exportRigButton = QtWidgets.QPushButton('Export Rig', self)
+        self.exportRigButton.pressed.connect(self.exportRig)
+        exportGroupLayout.addWidget(self.exportRigButton)
+
+    def exportSkin(self):
+        try:
+            ckcore.exportSkin()
+        finally:
+            self.exportSkinButton.setDown(False)
+
+    def exportRig(self):
+        pass
 
     def exportAll(self):
         self._export(self.exportAnimationBox.getAllFiles())
@@ -663,8 +739,10 @@ class ProjectModel(QtCore.QObject):
         # Export
         self.setData(ckproject.Project.exportSkeletonHkx, self._project.getExportSkeletonHkx())
         self.setData(ckproject.Project.exportSkeletonNif, self._project.getExportSkeletonNif())
+        self.setData(ckproject.Project.exportSkinNif, self._project.getExportSkinNif())
         self.setData(ckproject.Project.exportAnimationDir, self._project.getExportAnimationDirectory())
         self.setData(ckproject.Project.exportJointName, self._project.getExportJointName())
+        self.setData(ckproject.Project.exportMeshName, self._project.getExportMeshName())
         self.setData(ckproject.Project.exportBehaviorDir, self._project.getExportBehaviorDirectory())
         self.setData(ckproject.Project.exportCacheTxt, self._project.getExportCacheFile())
         self.setData(ckproject.Project.exportAnimationDataDir, self._project.getExportAnimationDataDirectory())
@@ -732,8 +810,15 @@ class ExportManager(MayaWindow):
         self._metadataTab = MetadataTab(self._model, parent=self)
         self._tabWidget.addTab(self._metadataTab, 'Metadata')
         # self._tabWidget.addTab(DataTab(self), 'Project')
+
+        # Add rigging tab
+        self._riggingTab = RiggingTab(self._model, parent=self)
+        self._tabWidget.addTab(self._riggingTab, 'Rigging')
+
+        # Add animation tab
         self._animationTab = AnimationTab(self._model, parent=self)
         self._tabWidget.addTab(self._animationTab, 'Animation')
+
         self._tabWidget.hide()
 
         # Add button widget
