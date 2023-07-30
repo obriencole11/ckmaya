@@ -11,5 +11,5 @@ Under the hood these tools use [ck-cmd](https://github.com/aerisarn/ck-cmd) to c
 
 ```
 from maya import cmds
-cmds.evalDeferred('from ckmaya.ui import menu;menu.addMenuCallback();menu.addSkyrimMenu()')
+cmds.evalDeferred('import ckmaya;ckmaya.startup()')
 ```

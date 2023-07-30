@@ -1,2 +1,2 @@
 from maya import cmds
-cmds.evalDeferred('from ckmaya.ui import menu;menu.addMenuCallback();menu.addSkyrimMenu()')
+cmds.evalDeferred('import ckmaya;ckmaya.startup()')

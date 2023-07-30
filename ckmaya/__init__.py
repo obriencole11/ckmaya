@@ -3,6 +3,19 @@ import sys
 from . import core, ui
 from .ui import menu
 
+
+def startup():
+    """
+    Loads ckmaya menu and adds paths.
+    """
+
+    # Add python paths
+    sys.path.append(os.path.join(os.path.dirname(__file__), 'thirdparty'))
+    sys.path.append(os.path.join(os.path.dirname(__file__), 'thirdparty', 'fbxsdk'))
+
+    # Add menus
+    menu.addSkyrimMenu()
+
     
 def _unload(pkg):
     """
