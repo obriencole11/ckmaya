@@ -1,224 +1,13 @@
 import os
-import shutil
 from functools import partial
-# Export each scene
 from maya import cmds
-import maya.api.OpenMaya as om2
-from ckmaya.core import ckproject, ckcore
-from ckmaya.ui.core import MayaWindow, getDirectoryDialog, getFileDialog, getNameDialog, saveChangesDialog, \
+
+from .core import ProjectStringBox, ProjectNodeNameBox, ProjectFileBox, ProjectDirectoryBox, ProjectListBox, \
+    ProjectModel, ProjectFloatBox
+from ..core import ckproject, ckcore
+from ..ui.core import MayaWindow, getDirectoryDialog, getFileDialog, getNameDialog, saveChangesDialog, \
     replaceFileDialog, getFilesDialog
-from ckmaya.thirdparty.Qt import QtWidgets, QtGui, QtCore
-
-
-class StringDataWidget(QtWidgets.QLineEdit):
-    """ A widget for accessing string data. """
-
-    def __init__(self, key, model, parent=None):
-        super(StringDataWidget, self).__init__(parent)
-        self._key = key
-        self._model = model
-        self._model.dataChanged.connect(self._onDataChanged)
-        self.setText(self._model.getData(self._key))
-        self.editingFinished.connect(self._onEditingFinished)
-
-    def _onDataChanged(self, key, value):
-        if key == self._key:
-            self.setText(str(value))
-
-    def _onEditingFinished(self):
-        self._model.setData(self._key, self.text())
-
-
-class BoolDataWidget(QtWidgets.QCheckBox):
-    """ A widget for accessing boolean data. """
-
-    def __init__(self, key, model, parent=None):
-        super(BoolDataWidget, self).__init__(parent)
-        self._key = key
-        self._model = model
-        self._model.dataChanged.connect(self._onDataChanged)
-        self.setChecked(self._model.getData(self._key))
-        self.toggled.connect(self._onToggled)
-
-    def _onDataChanged(self, key, value):
-        if key == self._key:
-            self.setChecked(bool(value))
-
-    def _onToggled(self):
-        self._model.setData(self._key, self.checkState())
-
-
-class ProjectBox(QtWidgets.QWidget):
-
-    def __init__(self, name, key, model, parent=None):
-        super(ProjectBox, self).__init__(parent)
-        self._key = key
-        self._model = model
-        self._model.dataChanged.connect(self._onDataChanged)
-
-        self._layout = QtWidgets.QHBoxLayout()
-        self._layout.setContentsMargins(0,0,0,0)
-        self._layout.setSpacing(5)
-        self.setLayout(self._layout)
-
-        # Path Label
-        self._label = QtWidgets.QLabel(name, self)
-        self._label.setMinimumWidth(100)
-        self._label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-        self._layout.addWidget(self._label)
-
-    def _onDataChanged(self, key, value):
-        return
-
-
-class ProjectStringBox(ProjectBox):
-
-    def __init__(self, name, key, model, parent=None):
-        super(ProjectStringBox, self).__init__(name, key, model, parent=parent)
-
-        # Path line edit
-        self._lineEdit = QtWidgets.QLineEdit(self)
-        self._lineEdit.editingFinished.connect(self.dataChanged)
-        self._lineEdit.setText(self._model.getData(self._key))
-        self._layout.addWidget(self._lineEdit)
-
-    def dataChanged(self):
-        self._model.setData(self._key, self._lineEdit.text())
-
-    def _onDataChanged(self, key, value):
-        if key == self._key:
-            self._lineEdit.setText(str(value))
-
-
-class ProjectNodeNameBox(ProjectStringBox):
-    pass
-
-
-class ProjectFileBox(ProjectStringBox):
-    """ A widget displaying a project file and a button to replace it. """
-
-    def __init__(self, name, key, model, fileTypes=None, parent=None):
-        super(ProjectFileBox, self).__init__(name, key, model, parent=parent)
-        self._fileTypes = fileTypes
-
-        # Disable line edit
-        self._lineEdit.setEnabled(False)
-
-        # Map button
-        self._mapButton = QtWidgets.QPushButton(self)
-        self._mapButton.setFlat(True)
-        self._mapButton.setIcon(QtGui.QIcon('://SP_DirClosedIcon.png'))
-        self._mapButton.pressed.connect(self.mapPath)
-        self._mapButton.setMaximumWidth(24)
-        self._layout.addWidget(self._mapButton)
-
-        if fileTypes is not None:
-            if 'ma' in self._fileTypes:
-                # Open Scene Button
-                self._openButton = QtWidgets.QPushButton(self)
-                self._openButton.setFlat(True)
-                self._openButton.setMaximumWidth(24)
-                self._openButton.setIcon(QtGui.QIcon('://SP_FileDialogStart.png'))
-                self._openButton.pressed.connect(self.openScene)
-                self._layout.addWidget(self._openButton)
-
-    def openScene(self):
-        """ Opens a maya scene. """
-        path = ckproject.getProject().getFullPath(self._lineEdit.text())
-        if os.path.exists(path):
-            if saveChangesDialog():
-                cmds.file(path, o=True, force=True, prompt=False)
-                self._openButton.setDown(False)
-
-    def mapPath(self):
-        """ Maps the file path. """
-        try:
-            directory = ckproject.getProject().getDirectory()
-            if os.path.exists(self._lineEdit.text()):
-                directory = os.path.dirname(self._lineEdit.text())
-            filepath = getFileDialog(directory, self._fileTypes, existing=False)
-            filepath = ckproject.getProject().getProjectPath(filepath)
-            self._model.setData(self._key, filepath)
-        finally:
-            self._mapButton.setDown(False)
-
-
-class ProjectDirectoryBox(ProjectStringBox):
-    """ A widget displaying a project file and a button to replace it. """
-
-    def __init__(self, name, key, model, parent=None):
-        super(ProjectDirectoryBox, self).__init__(name, key, model, parent=parent)
-
-        # Disable line edit
-        self._lineEdit.setEnabled(False)
-
-        # Map button
-        self._mapButton = QtWidgets.QPushButton(self)
-        self._mapButton.setFlat(True)
-        self._mapButton.setIcon(QtGui.QIcon('://SP_DirClosedIcon.png'))
-        self._mapButton.pressed.connect(self.mapPath)
-        self._layout.addWidget(self._mapButton)
-
-    def mapPath(self):
-        """ Maps the directory path. """
-        try:
-            directory = ckproject.getProject().getDirectory()
-            if os.path.exists(self._lineEdit.text()):
-                directory = os.path.dirname(self._lineEdit.text())
-            filepath = getDirectoryDialog(directory)
-            filepath = ckproject.getProject().getProjectPath(filepath)
-            self._model.setData(self._key, filepath)
-        finally:
-            self._mapButton.setDown(False)
-
-
-class ProjectListBox(ProjectBox):
-
-    def __init__(self, name, key, model, fileTypes=None, parent=None):
-        super(ProjectListBox, self).__init__(name, key, model, parent=parent)
-        self._fileTypes = fileTypes
-
-        listLayout = QtWidgets.QVBoxLayout()
-        listLayout.setContentsMargins(0,0,0,0)
-        self._layout.addLayout(listLayout)
-
-        # List View
-        self._listView = QtWidgets.QListView(self)
-        self._listView.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
-        self._listView.doubleClicked.connect(self.onDoubleClick)
-
-        self._listModel = QtWidgets.QFileSystemModel(self)
-        self._listModel.setReadOnly(True)
-        self._listModel.setFilter(QtCore.QDir.Files)
-        self._listView.setModel(self._listModel)
-
-        listLayout.addWidget(self._listView)
-        # self._onDataChanged(self._key, self._model.getData(self._key))
-
-    def onDoubleClick(self):
-        if len(self._listView.selectedIndexes()) > 0:
-            path = self._listModel.filePath(self._listView.selectedIndexes()[-1])
-            if saveChangesDialog():
-                cmds.file(path, o=True, force=True, prompt=False)
-
-    def _onDataChanged(self, key, value):
-        if key == self._key:
-            root = self._model.getProject().getFullPath(value)
-            self._listModel.setRootPath(root)
-            self._listView.setRootIndex(self._listModel.index(root))
-
-    def getSelectedFiles(self):
-        paths = []
-        for index in self._listView.selectedIndexes():
-            paths.append(self._listModel.filePath(index))
-        return paths
-
-    def getAllFiles(self):
-        paths = []
-        rootIndex = self._listModel.index(self._listModel.rootPath())
-        for i in range(self._listModel.rowCount(rootIndex)):
-            paths.append(self._listModel.filePath(rootIndex.child(i, 0)))
-        return paths
+from ..thirdparty.Qt import QtWidgets, QtGui, QtCore
 
 
 class ProjectTab(QtWidgets.QWidget):
@@ -264,50 +53,55 @@ class MetadataTab(ProjectTab):
         importGroup, importGroupLayout = self.addGroupBox('Import Files')
 
         # Import Skeleton Hkx
-        self._importSkeletonHkxBox = ProjectFileBox('skeleton.hkx', ckproject.Project.importSkeletonHkx, model,
+        self._importSkeletonHkxBox = ProjectFileBox('skeleton.hkx', ckproject.ProjectDataKey.importSkeletonHkx, model,
                                                     fileTypes='hkx', parent=self)
         importGroupLayout.addWidget(self._importSkeletonHkxBox)
 
         # Import Skeleton Hkx
-        self._importSkeletonNifBox = ProjectFileBox('skeleton.nif', ckproject.Project.importSkeletonNif, model,
+        self._importSkeletonNifBox = ProjectFileBox('skeleton.nif', ckproject.ProjectDataKey.importSkeletonNif, model,
                                                     fileTypes='nif', parent=self)
         importGroupLayout.addWidget(self._importSkeletonNifBox)
 
         # Import Animations
-        self._importAnimationBox = ProjectDirectoryBox('Animations', ckproject.Project.importAnimationDir, model,
+        self._importAnimationBox = ProjectDirectoryBox('Animations', ckproject.ProjectDataKey.importAnimationDir, model,
                                                        parent=self)
         importGroupLayout.addWidget(self._importAnimationBox)
 
         # Import Animations
-        self._importBehaviorBox = ProjectDirectoryBox('Behaviors', ckproject.Project.importBehaviorDir, model,
-                                                       parent=self)
+        self._importBehaviorBox = ProjectDirectoryBox('Behaviors', ckproject.ProjectDataKey.importBehaviorDir, model,
+                                                      parent=self)
         importGroupLayout.addWidget(self._importBehaviorBox)
 
         # Export Cache File
-        self._importCacheBox = ProjectFileBox('Cache File', ckproject.Project.importCacheTxt, model,
-                                                       fileTypes=['txt'], parent=self)
+        self._importCacheBox = ProjectFileBox('Cache File', ckproject.ProjectDataKey.importCacheTxt, model,
+                                              fileTypes=['txt'], parent=self)
         importGroupLayout.addWidget(self._importCacheBox)
+
+        # Import Tags
+        self._animationTagDirectoryBox = ProjectDirectoryBox('Animation Tag Directory',
+                                                             ckproject.ProjectDataKey.animationTagDir, model, parent=self)
+        importGroupLayout.addWidget(self._animationTagDirectoryBox)
 
         # ---- Scene Group ---- #
         sceneGroup, sceneGroupLayout = self.addGroupBox('Scene Files')
 
         # Scene Skeleton
-        self._sceneSkeletonBox = ProjectFileBox('skeleton.ma', ckproject.Project.skeletonSceneFile, model,
-                                                  fileTypes=['ma', 'mb'], parent=self)
+        self._sceneSkeletonBox = ProjectFileBox('skeleton.ma', ckproject.ProjectDataKey.skeletonSceneFile, model,
+                                                fileTypes=['ma', 'mb'], parent=self)
         sceneGroupLayout.addWidget(self._sceneSkeletonBox)
 
         # Scene Animations
-        self._sceneAnimationBox = ProjectDirectoryBox('Animations', ckproject.Project.animationSceneDir, model,
+        self._sceneAnimationBox = ProjectDirectoryBox('Animations', ckproject.ProjectDataKey.animationSceneDir, model,
                                                       parent=self)
         sceneGroupLayout.addWidget(self._sceneAnimationBox)
 
         # Export Joint
-        self._exportJointBox = ProjectNodeNameBox('Export Node', ckproject.Project.exportJointName, model,
-                                                parent=self)
+        self._exportJointBox = ProjectNodeNameBox('Export Node', ckproject.ProjectDataKey.exportJointName, model,
+                                                  parent=self)
         sceneGroupLayout.addWidget(self._exportJointBox)
 
         # Export Mesh
-        self._skinNameBox = ProjectNodeNameBox('Export Mesh', ckproject.Project.exportMeshName, model,
+        self._skinNameBox = ProjectNodeNameBox('Export Mesh', ckproject.ProjectDataKey.exportMeshName, model,
                                                parent=self)
         sceneGroupLayout.addWidget(self._skinNameBox)
 
@@ -315,45 +109,49 @@ class MetadataTab(ProjectTab):
         exportGroup, exportGroupLayout = self.addGroupBox('Export Files')
 
         # Export Skeleton Hkx
-        self._exportSkeletonHkxBox = ProjectFileBox('skeleton.hkx', ckproject.Project.exportSkeletonHkx, model,
-                                                  fileTypes='hkx', parent=self)
+        self._exportSkeletonHkxBox = ProjectFileBox('skeleton.hkx', ckproject.ProjectDataKey.exportSkeletonHkx, model,
+                                                    fileTypes='hkx', parent=self)
         exportGroupLayout.addWidget(self._exportSkeletonHkxBox)
 
         # Export Skeleton Hkx
-        self._exportSkeletonNifBox = ProjectFileBox('skeleton.nif', ckproject.Project.exportSkeletonNif, model,
-                                                  fileTypes='nif', parent=self)
+        self._exportSkeletonNifBox = ProjectFileBox('skeleton.nif', ckproject.ProjectDataKey.exportSkeletonNif, model,
+                                                    fileTypes='nif', parent=self)
         exportGroupLayout.addWidget(self._exportSkeletonNifBox)
 
         # Export Skin Hkx
-        self._exportSkinNifBox = ProjectFileBox('skin.nif', ckproject.Project.exportSkinNif, model,
-                                                  fileTypes='nif', parent=self)
+        self._exportSkinNifBox = ProjectFileBox('skin.nif', ckproject.ProjectDataKey.exportSkinNif, model,
+                                                fileTypes='nif', parent=self)
         exportGroupLayout.addWidget(self._exportSkinNifBox)
 
         # Export Animations
-        self._exportAnimationBox = ProjectDirectoryBox('animations', ckproject.Project.exportAnimationDir, model,
+        self._exportAnimationBox = ProjectDirectoryBox('animations', ckproject.ProjectDataKey.exportAnimationDir, model,
                                                        parent=self)
         exportGroupLayout.addWidget(self._exportAnimationBox)
 
         # Export Behaviors
-        self._exportBehaviorBox = ProjectDirectoryBox('Behaviors', ckproject.Project.exportBehaviorDir, model,
-                                                       parent=self)
+        self._exportBehaviorBox = ProjectDirectoryBox('Behaviors', ckproject.ProjectDataKey.exportBehaviorDir, model,
+                                                      parent=self)
         exportGroupLayout.addWidget(self._exportBehaviorBox)
 
         # Export Cache File
-        self._exportCacheBox = ProjectFileBox('Cache File', ckproject.Project.exportCacheTxt, model,
-                                                       fileTypes=['txt'], parent=self)
+        self._exportCacheBox = ProjectFileBox('Cache File', ckproject.ProjectDataKey.exportCacheTxt, model,
+                                              fileTypes=['txt'], parent=self)
         exportGroupLayout.addWidget(self._exportCacheBox)
 
         # Animation Data
         self._exportAnimationDataBox = ProjectDirectoryBox('Animation Data',
-                                                           ckproject.Project.exportAnimationDataDir, model, parent=self)
+                                                           ckproject.ProjectDataKey.exportAnimationDataDir, model, parent=self)
         exportGroupLayout.addWidget(self._exportAnimationDataBox)
+
+        # Animation Data
+        self._exportScaleBox = ProjectFloatBox('Export Scale', ckproject.ProjectDataKey.exportScale, model, parent=self)
+        exportGroupLayout.addWidget(self._exportScaleBox)
 
         # ----- Mesh Group ----- #
         extraGroup, extraGroupLayout = self.addGroupBox('Additional Files')
 
         self._textureDirectoryBox = ProjectDirectoryBox('Texture Directory',
-                                                           ckproject.Project.textureDir, model, parent=self)
+                                                        ckproject.ProjectDataKey.textureDir, model, parent=self)
         extraGroupLayout.addWidget(self._textureDirectoryBox)
 
 
@@ -432,7 +230,7 @@ class EditMappingDialog2(QtWidgets.QDialog):
         self.updateMapping()
 
     def updateMapping(self):
-        self.model.setData(ckproject.Project.controlJointMapping, self.getMapping())
+        self.model.setData(ckproject.ProjectDataKey.controlJointMapping, self.getMapping())
 
 
 class EditMappingDialog(QtWidgets.QDialog):
@@ -444,7 +242,7 @@ class EditMappingDialog(QtWidgets.QDialog):
     def __init__(self, model, parent=None):
         super(EditMappingDialog, self).__init__(parent)
         self.setWindowTitle('Edit Mapping')
-        self.root = model.getData(ckproject.Project.exportJointName)
+        self.root = model.getData(ckproject.ProjectDataKey.exportJointName)
         self.model = model
 
         # Main
@@ -535,12 +333,13 @@ class AnimationTab(ProjectTab):
         self.importTagsButton.pressed.connect(self.importTags)
         otherImportButtonLayout.addWidget(self.importTagsButton)
 
+        # Export Animation Group
         exportGroup, exportGroupLayout = self.addGroupBox('Export Animation')
         exportGroup.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Minimum)
-        exportAnimationDirBox = ProjectDirectoryBox('Export Directory', ckproject.Project.animationSceneDir, model,
-                                                      parent=self)
+        exportAnimationDirBox = ProjectDirectoryBox('Export Directory', ckproject.ProjectDataKey.animationSceneDir, model,
+                                                    parent=self)
         exportGroupLayout.addWidget(exportAnimationDirBox)
-        self.exportAnimationBox = ProjectListBox('Animations', ckproject.Project.animationSceneDir, model,
+        self.exportAnimationBox = ProjectListBox('Animations', ckproject.ProjectDataKey.animationSceneDir, model,
                                                  fileTypes=['ma'], parent=self)
         exportGroupLayout.addWidget(self.exportAnimationBox)
 
@@ -560,6 +359,12 @@ class AnimationTab(ProjectTab):
         self.exportButton.pressed.connect(self.exportScene)
         lowerButtonLayout.addWidget(self.exportButton)
 
+        lowerSettingLayout = QtWidgets.QFormLayout()
+        exportGroupLayout.addLayout(lowerSettingLayout)
+        self.formatBox = QtWidgets.QComboBox(parent=self)
+        self.formatBox.addItems(['hkx', 'fbx'])
+        lowerSettingLayout.addRow('Format', self.formatBox)
+
         self.mappingWindow = EditMappingDialog(model, parent=self)
 
     def importAnimation(self):
@@ -572,7 +377,7 @@ class AnimationTab(ProjectTab):
                     fileTypes=['fbx', 'hkx']
                 )
                 for animation in animations:
-                    directory = project.getFullPath(project.getAnimationSceneDirectory())
+                    directory = project.getAnimationSceneDirectory()
                     newAnimation = os.path.join(directory, '.'.join([os.path.basename(animation).split('.')[0], 'ma']))
                     if replaceFileDialog(newAnimation):
                         ckcore.importAnimation(animation)
@@ -598,21 +403,29 @@ class AnimationTab(ProjectTab):
         finally:
             self.importTagsButton.setDown(False)
 
+    def importTagSelected(self):
+        try:
+            self._importTags(self.tagAnimationBox.getSelectedFiles())
+        finally:
+            self.importTagSelectedButton.setDown(False)
+
     def exportSelected(self):
         self._export(self.exportAnimationBox.getSelectedFiles())
         self.exportSelectedButton.setDown(False)
 
     def exportAll(self):
-        self._export(self.exportAnimationBox.getAllFiles())
-        self.exportAllButton.setDown(False)
+        try:
+            self._export(self.exportAnimationBox.getAllFiles())
+        finally:
+            self.exportAllButton.setDown(False)
 
     def exportScene(self):
         try:
             QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
-            ckcore.exportAnimation()
-            self.exportButton.setDown(False)
+            ckcore.exportAnimation(format=self.formatBox.currentText())
         finally:
             QtWidgets.QApplication.restoreOverrideCursor()
+            self.exportButton.setDown(False)
 
     def _export(self, files):
         if len(files) == 0:
@@ -628,7 +441,7 @@ class AnimationTab(ProjectTab):
                 cmds.file(file, o=True, force=True, prompt=False)
             except:
                 pass
-            ckcore.exportAnimation()
+            ckcore.exportAnimation(format=self.formatBox.currentText())
 
 
 class RiggingTab(ProjectTab):
@@ -637,13 +450,22 @@ class RiggingTab(ProjectTab):
     def __init__(self, model, parent=None):
         super(RiggingTab, self).__init__(model, parent=parent)
 
-        exportGroup, exportGroupLayout = self.addGroupBox('Export')
-        exportGroup.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Minimum)
+        # Export Skin Group
+        exportSkinGroup, exportSkinGroupLayout = self.addGroupBox('Skin')
+        exportSkinGroup.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Minimum)
+        exportMeshBox = ProjectStringBox('Mesh Name', ckproject.ProjectDataKey.exportMeshName, model, parent=self)
+        exportSkinGroupLayout.addWidget(exportMeshBox)
+        exportNifBox = ProjectFileBox('Skin Nif', ckproject.ProjectDataKey.exportSkinNif, model, parent=self)
+        exportSkinGroupLayout.addWidget(exportNifBox)
 
         # Export Skin
         self.exportSkinButton = QtWidgets.QPushButton('Export Skin', self)
         self.exportSkinButton.pressed.connect(self.exportSkin)
-        exportGroupLayout.addWidget(self.exportSkinButton)
+        exportSkinGroupLayout.addWidget(self.exportSkinButton)
+
+        # Export Rig Group
+        exportGroup, exportGroupLayout = self.addGroupBox('Skeleton')
+        exportGroup.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Minimum)
 
         # Export Rig
         self.exportRigButton = QtWidgets.QPushButton('Export Rig', self)
@@ -657,7 +479,10 @@ class RiggingTab(ProjectTab):
             self.exportSkinButton.setDown(False)
 
     def exportRig(self):
-        pass
+        try:
+            ckcore.exportRig()
+        finally:
+            self.exportRigButton.setDown(False)
 
     def exportAll(self):
         self._export(self.exportAnimationBox.getAllFiles())
@@ -686,94 +511,6 @@ class RiggingTab(ProjectTab):
             except:
                 pass
             ckcore.exportAnimation()
-
-
-class ProjectModel(QtCore.QObject):
-    """
-    The main project data model.
-    This object handles all signals for updating model data.
-    """
-
-    dataChanged = QtCore.Signal(str, object)  # Called when a data key is changed
-
-    def __init__(self, parent=None):
-        """
-        Initializes the project data.
-
-        Args:
-            parent(QObject): The parent object.
-        """
-        super(ProjectModel, self).__init__(parent)
-        self._project = ckproject.getProject()
-        self._data = {}
-        if self._project is not None:
-            self.loadData()
-
-    def getProject(self):
-        return self._project
-
-    def setProject(self, project):
-        self._project = project
-        self._data = {}
-        self.loadData()
-
-    def loadData(self):
-        """
-        Loads data from project.
-        """
-        if self._project is None:
-            return
-
-        # Import
-        self.setData(ckproject.Project.importSkeletonHkx, self._project.getImportSkeletonHkx())
-        self.setData(ckproject.Project.importSkeletonNif, self._project.getImportSkeletonNif())
-        self.setData(ckproject.Project.importAnimationDir, self._project.getImportAnimationDirectory())
-        self.setData(ckproject.Project.importBehaviorDir, self._project.getImportBehaviorDirectory())
-        self.setData(ckproject.Project.importCacheTxt, self._project.getImportCacheFile())
-        self.setData(ckproject.Project.controlJointMapping, self._project.getControlJointMapping())
-
-        # Scenes
-        self.setData(ckproject.Project.skeletonSceneFile, self._project.getSkeletonScene())
-        self.setData(ckproject.Project.animationSceneDir, self._project.getAnimationSceneDirectory())
-
-        # Export
-        self.setData(ckproject.Project.exportSkeletonHkx, self._project.getExportSkeletonHkx())
-        self.setData(ckproject.Project.exportSkeletonNif, self._project.getExportSkeletonNif())
-        self.setData(ckproject.Project.exportSkinNif, self._project.getExportSkinNif())
-        self.setData(ckproject.Project.exportAnimationDir, self._project.getExportAnimationDirectory())
-        self.setData(ckproject.Project.exportJointName, self._project.getExportJointName())
-        self.setData(ckproject.Project.exportMeshName, self._project.getExportMeshName())
-        self.setData(ckproject.Project.exportBehaviorDir, self._project.getExportBehaviorDirectory())
-        self.setData(ckproject.Project.exportCacheTxt, self._project.getExportCacheFile())
-        self.setData(ckproject.Project.exportAnimationDataDir, self._project.getExportAnimationDataDirectory())
-
-        # Extra
-        self.setData(ckproject.Project.textureDir, self._project.getTextureDirectory())
-
-    def getData(self, key, default=None):
-        """
-        Gets a given keys value.
-
-        Args:
-            key(str): The data key.
-            default(object): The default data value.
-
-        Returns:
-            object: The data value.
-        """
-        return self._data.get(key, default)
-
-    def setData(self, key, value):
-        """
-        Sets a given keys value.
-
-        Args:
-            key(str): The data key.
-            value(object): The data value.
-        """
-        self._project.setMetadataKey(key, value)
-        self._data[key] = value
-        self.dataChanged.emit(key, value)
 
 
 class ExportManager(MayaWindow):
@@ -873,17 +610,11 @@ class ExportManager(MayaWindow):
         """ Updates the current project text. """
         self._projectText.setText('<b>Active Project:</b> %s' % directory)
 
-    def setProjectData(self):
-        """ Updates the project with tab data. """
-        project = ckproject.getProject()
-        for i in range(self._tabWidget.count()):
-            self._tabWidget.widget(i).setProjectData(project)
-
     def updateProject(self):
         """ Updates the interface. """
         project = ckproject.getProject()
         if project is not None:
-            ckproject.addRecentProject(project.getDirectory())
+            # ckproject.addRecentProject(project.getDirectory())
             self.setProjectText(project.getDirectory())
             self._tabWidget.show()
             self._buttonWidget.hide()

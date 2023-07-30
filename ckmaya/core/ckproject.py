@@ -3,7 +3,8 @@
 import os
 import json
 import tempfile
-from maya import cmds
+import enum
+from maya import cmds, mel
 from maya import OpenMaya as om
 
 
@@ -26,41 +27,71 @@ def santizePath(path):
     return path
 
 
-def addRecentProject(directory):
-    """
-    Adds a recent project to the recent project cache.
-
-    Args:
-        directory(directory): A recent project directory.
-
-    Returns:
-        list: The updated recent projects.
-    """
-    projects = getRecentProjects()
-    projects = [path for path in projects if os.path.exists(path) and path != directory][:10]
-    projects.insert(0, directory)
-    with open(RECENT_PROJECT_CACHE, 'w+') as openfile:
-        json.dump(projects, openfile)
-    return projects
-
-
-def getRecentProjects():
-    """
-    Gets the current recent projects.
-
-    Returns:
-        list: A list of project directories.
-    """
-    if os.path.exists(RECENT_PROJECT_CACHE):
-        with open(RECENT_PROJECT_CACHE, 'r') as openfile:
-            return json.load(openfile)
-    return []
+# def addRecentProject(directory):
+#     """
+#     Adds a recent project to the recent project cache.
+#
+#     Args:
+#         directory(directory): A recent project directory.
+#
+#     Returns:
+#         list: The updated recent projects.
+#     """
+#     projects = getRecentProjects()
+#     projects = [path for path in projects if os.path.exists(path) and path != directory][:10]
+#     projects.insert(0, directory)
+#     with open(RECENT_PROJECT_CACHE, 'w+') as openfile:
+#         json.dump(projects, openfile)
+#     return projects
 
 
-class Project(object):
-    """
-    An object that handles project relative paths.
-    """
+# def getRecentProjects():
+#     """
+#     Gets the current recent projects.
+#
+#     Returns:
+#         list: A list of project directories.
+#     """
+#     if os.path.exists(RECENT_PROJECT_CACHE):
+#         with open(RECENT_PROJECT_CACHE, 'r') as openfile:
+#             return json.load(openfile)
+#     return []
+
+
+class ProjectDataType(enum.Enum):
+    """ Project data types. """
+
+    Boolean = 'bool'
+    Float = 'float'
+    String = 'string'
+    StringMapping = 'string_mapping'
+    HkxFile = '.hkx'
+    NifFile = '.nif'
+    TxtFile = '.txt'
+    MayaFile = '.ma'
+    File = 'file'
+    Directory = 'directory'
+    DirectoryList = 'directory_list'
+    NodeName = 'node_name'
+
+
+class ProjectDataCategory(enum.Enum):
+    """ Project data categories. """
+
+    Import = 'Import'
+    General = 'General'
+    Export = 'Export'
+
+    @property
+    def name(self):
+        return {}.get(self, str(self.value))
+
+
+class ProjectDataKey(enum.Enum):
+    """ Project data key names. """
+
+    # Name
+    projectName = 'projectname'
 
     # Import Files
     importSkeletonHkx = 'importskeleton.hkx'
@@ -76,8 +107,11 @@ class Project(object):
 
     # Textures
     textureDir = 'textures'
+    animationTagDir = 'animationTags'
 
     # Export Files
+    exportPackageDirs = 'exportpackagedirs'
+    exportDir = 'exportdirectory'
     exportJointName = 'exportjointname'
     exportMeshName = 'exportskinname'
     exportSkeletonHkx = 'exportskeleton.hkx'
@@ -87,6 +121,115 @@ class Project(object):
     exportAnimationDir = 'exportanimations'
     exportBehaviorDir = 'exportbehaviors'
     exportAnimationDataDir = 'exportanimationdata'
+    exportScale = 'exportscale'
+    exportTextureDir = 'exporttexturedir'
+    exportAnimationSkeletonHkx = 'exportanimationskeleton.hkx'
+
+    @property
+    def defaultValue(self):
+        return {
+            ProjectDataKey.controlJointMapping: {},
+            ProjectDataKey.exportScale: 1.0,
+            ProjectDataKey.exportPackageDirs: [],
+            ProjectDataKey.projectName: 'unnamed',
+        }.get(self, '')
+
+    @property
+    def name(self):
+        return {
+            self.projectName: 'Project Name',
+            self.importSkeletonHkx: 'Import Skeleton Hkx',
+            self.importSkeletonNif: 'Import Skeleton Nif',
+            self.importCacheTxt: 'Import Cache Txt',
+            self.importAnimationDir: 'Import Animation Dir',
+            self.importBehaviorDir: 'Import Behavior Dir',
+            self.exportPackageDirs: 'Export Package Dirs',
+            self.exportDir: 'Export Dir',
+            self.exportJointName: 'Export Joint Name',
+            self.exportMeshName: 'Export Mesh Name',
+            self.exportSkeletonHkx: 'Export Skeleton Hkx',
+            self.exportSkeletonNif: 'Export Skeleton Nif',
+            self.exportSkinNif: 'Export Skin Nif',
+            self.exportCacheTxt: 'Export Cache Txt',
+            self.exportAnimationDir: 'Export Animation Dir',
+            self.exportBehaviorDir: 'Export Behavior Dir',
+            self.exportAnimationDataDir: 'Export Animation Data Dir',
+            self.exportScale: 'Export Scale',
+            self.controlJointMapping: 'Control Joint Mapping',
+            self.skeletonSceneFile: 'Skeleton Scene',
+            self.animationSceneDir: 'Animation Scene Dir',
+            self.textureDir: 'Texture Dir',
+            self.animationTagDir: 'Animation Tag Dir',
+            self.exportTextureDir: 'Export Texture Dir',
+            self.exportAnimationSkeletonHkx: 'Export Animation Skeleton'
+        }.get(self, self.value)
+
+    @property
+    def category(self):
+        return {
+            self.projectName: ProjectDataCategory.General,
+            self.importSkeletonHkx: ProjectDataCategory.Import,
+            self.importSkeletonNif: ProjectDataCategory.Import,
+            self.importCacheTxt: ProjectDataCategory.Import,
+            self.importAnimationDir: ProjectDataCategory.Import,
+            self.importBehaviorDir: ProjectDataCategory.Import,
+            self.exportPackageDirs: ProjectDataCategory.Export,
+            self.exportDir: ProjectDataCategory.Export,
+            self.exportJointName: ProjectDataCategory.Export,
+            self.exportMeshName: ProjectDataCategory.Export,
+            self.exportSkeletonHkx: ProjectDataCategory.Export,
+            self.exportSkeletonNif: ProjectDataCategory.Export,
+            self.exportSkinNif: ProjectDataCategory.Export,
+            self.exportCacheTxt: ProjectDataCategory.Export,
+            self.exportAnimationDir: ProjectDataCategory.Export,
+            self.exportBehaviorDir: ProjectDataCategory.Export,
+            self.exportAnimationDataDir: ProjectDataCategory.Export,
+            self.exportScale: ProjectDataCategory.Export,
+            self.exportTextureDir: ProjectDataCategory.Export,
+            self.exportAnimationSkeletonHkx: ProjectDataCategory.Export
+        }.get(self, ProjectDataCategory.General)
+
+    @property
+    def dataType(self):
+        return {
+            self.projectName: ProjectDataType.String,
+            self.importSkeletonHkx: ProjectDataType.HkxFile,
+            self.importSkeletonNif: ProjectDataType.NifFile,
+            self.importCacheTxt: ProjectDataType.TxtFile,
+            self.importAnimationDir: ProjectDataType.Directory,
+            self.importBehaviorDir: ProjectDataType.Directory,
+            self.controlJointMapping: ProjectDataType.StringMapping,
+            self.skeletonSceneFile: ProjectDataType.MayaFile,
+            self.animationSceneDir: ProjectDataType.Directory,
+            self.textureDir: ProjectDataType.Directory,
+            self.animationTagDir: ProjectDataType.Directory,
+            self.exportDir: ProjectDataType.Directory,
+            self.exportJointName: ProjectDataType.NodeName,
+            self.exportMeshName: ProjectDataType.NodeName,
+            self.exportSkeletonHkx: ProjectDataType.HkxFile,
+            self.exportSkeletonNif: ProjectDataType.NifFile,
+            self.exportSkinNif: ProjectDataType.NifFile,
+            self.exportCacheTxt: ProjectDataType.TxtFile,
+            self.exportAnimationDir: ProjectDataType.Directory,
+            self.exportBehaviorDir: ProjectDataType.Directory,
+            self.exportAnimationDataDir: ProjectDataType.Directory,
+            self.exportScale: ProjectDataType.Float,
+            self.exportPackageDirs: ProjectDataType.DirectoryList,
+            self.exportTextureDir: ProjectDataType.Directory,
+            self.exportAnimationSkeletonHkx: ProjectDataType.HkxFile
+        }.get(self, ProjectDataType.String)
+
+    @property
+    def description(self):
+        return {
+            self.exportAnimationSkeletonHkx: 'The legacy skeleton HKX file used for export animations.'
+        }.get(self, '')
+
+
+class Project(object):
+    """
+    An object that handles project relative paths.
+    """
 
     def __init__(self, directory):
         self._directory = santizePath(directory)
@@ -94,6 +237,11 @@ class Project(object):
     def __repr__(self):
         """ Formats the project name. """
         return 'Project(%s)' % self.getDirectory()
+
+    def __eq__(self, other):
+        """ Adds support for equality checks. """
+        if isinstance(other, Project):
+            return self._directory == other._directory
 
     def _getFile(self, directory, name):
         """
@@ -117,6 +265,15 @@ class Project(object):
             str: The workspace path.
         """
         return os.path.join(self.getDirectory(), 'workspace.mel')
+
+    def getName(self):
+        """
+        Gets the name of the project.
+
+        Returns:
+            str: A project name.
+        """
+        return self.getMetadataKey(ProjectDataKey.projectName)
 
     def getDirectory(self):
         """
@@ -158,18 +315,17 @@ class Project(object):
         with open(self.getMetadataFile(), 'w+') as openfile:
             json.dump(data, openfile, indent=4)
 
-    def getMetadataKey(self, key, default=None):
+    def getMetadataKey(self, key):
         """
         Gets a metadata value for a given key.
 
         Args:
-            key(str): A dictionary key.
-            default(...): The default value to return if the key does not exist.
+            key(ProjectDataKey): A dictionary key.
 
         Returns:
-            (...): The dictionary value.
+            Any: The dictionary value.
         """
-        data = self.getMetadata().get(key, default)
+        data = self.getMetadata().get(key.value, key.defaultValue)
         if isinstance(data, str):
             data = santizePath(data)
         return data
@@ -179,14 +335,30 @@ class Project(object):
         Sets the value of the given metadata key.
 
         Args:
-            key(str): A metadata key.
+            key(ProjectDataKey): A metadata key.
             value(...): A metadata value.
         """
         data = self.getMetadata()
         if isinstance(value, str):
             value = santizePath(value)
-        data[key] = value
+        data[key.value] = value
         self.setMetadata(data)
+
+    def getExportPath(self, path):
+        """
+        Converts a full path to a project local export path.
+
+        Args:
+            path(str): A file or directory path.
+
+        Returns:
+            str: The project file or directory path.
+        """
+        path = santizePath(path)
+        if self.getDirectory() in path:
+            length = len(self.getExportDirectory().split('/'))
+            path = '/'.join(path.split('/')[length:])
+        return path
 
     def getProjectPath(self, path):
         """
@@ -204,53 +376,194 @@ class Project(object):
             path = '/'.join(path.split('/')[length:])
         return path
 
-    def getFullPath(self, path, existing=True):
+    def getFullPath(self, path):
         """
         Converts a project local path to a full path.
 
         Args:
             path(str): A file or directory path.
-            existing(bool): Whether to check if the full path exists.
 
         Returns:
             str: The full file or directory path.
         """
-        projectPath = santizePath(os.path.join(self.getDirectory(), path))
-        if existing and not os.path.exists(projectPath):
-            raise BaseException('%s does not exist.' % projectPath)
-        return projectPath
+        return santizePath(os.path.join(self.getDirectory(), path))
 
     # ---- Import ---- #
 
-    def getImportSkeletonHkx(self): return self.getMetadataKey(self.importSkeletonHkx, '')
-    def getImportSkeletonNif(self): return self.getMetadataKey(self.importSkeletonNif, '')
-    def getImportAnimationDirectory(self): return self.getMetadataKey(self.importAnimationDir, '')
-    def getImportBehaviorDirectory(self): return self.getMetadataKey(self.importBehaviorDir, '')
-    def getImportCacheFile(self): return self.getMetadataKey(self.importCacheTxt, '')
+    def getImportSkeletonHkx(self):
+        """
+        Gets the full path of the import skeleton hkx file.
+
+        Returns:
+            str: A file path.
+        """
+        return self.getFullPath(self.getMetadataKey(ProjectDataKey.importSkeletonHkx))
+
+    def getImportSkeletonNif(self):
+        """
+        Gets the full path of the import skeleton nif file.
+
+        Returns:
+            str: A file path.
+        """
+        return self.getFullPath(self.getMetadataKey(ProjectDataKey.importSkeletonNif))
+
+    def getImportCacheFile(self):
+        """
+        Gets the full path of the import cache file.
+
+        Returns:
+            str: A file path.
+        """
+        return self.getFullPath(self.getMetadataKey(ProjectDataKey.importCacheTxt))
 
     # ---- Scenes ---- #
 
-    def getAnimationSceneDirectory(self): return self.getMetadataKey(self.animationSceneDir, '')
-    def getSkeletonScene(self): return self.getMetadataKey(self.skeletonSceneFile, '')
+    def getAnimationSceneDirectory(self):
+        """
+        Gets the full path of the animation scene directory.
+
+        Returns:
+            str: A directory path.
+        """
+        return self.getFullPath(self.getMetadataKey(ProjectDataKey.animationSceneDir))
+
+    def getSkeletonScene(self):
+        """
+        Gets the full path of the skeleton scene.
+
+        Returns:
+            str: A file path.
+        """
+        return self.getFullPath(self.getMetadataKey(ProjectDataKey.skeletonSceneFile))
 
     # ---- Textures ---- #
-    def getTextureDirectory(self): return self.getMetadataKey(self.textureDir, '')
+
+    def getTextureDirectory(self):
+        """
+        Gets the full path of the texture directory.
+
+        Returns:
+            str: A directory path.
+        """
+        return self.getFullPath(self.getMetadataKey(ProjectDataKey.textureDir))
+
+    def getAnimationTagDirectory(self):
+        """
+        Gets the full path of the animation tag directory.
+
+        Returns:
+            str: A directory path.
+        """
+        return self.getFullPath(self.getMetadataKey(ProjectDataKey.animationTagDir))
 
     # ---- Export ---- #
 
-    def getExportSkeletonHkx(self): return self.getMetadataKey(self.exportSkeletonHkx, '')
-    def getExportSkeletonNif(self): return self.getMetadataKey(self.exportSkeletonNif, '')
-    def getExportSkinNif(self): return self.getMetadataKey(self.exportSkinNif, '')
-    def getExportAnimationDirectory(self): return self.getMetadataKey(self.exportAnimationDir, '')
-    def getExportJointName(self): return self.getMetadataKey(self.exportJointName, '')
-    def getExportMeshName(self): return self.getMetadataKey(self.exportMeshName, '')
-    def getExportBehaviorDirectory(self): return self.getMetadataKey(self.exportBehaviorDir, '')
-    def getExportCacheFile(self): return self.getMetadataKey(self.exportCacheTxt, '')
-    def getExportAnimationDataDirectory(self): return self.getMetadataKey(self.exportAnimationDataDir, '')
+    def getExportDirectory(self):
+        """
+        Gets the full path of the root export directory.
+
+        Returns:
+            str: A directory path.
+        """
+        return self.getFullPath(self.getMetadataKey(ProjectDataKey.exportDir))
+
+    def getExportTextureDirectory(self):
+        """
+        Gets the full path of the export texture directory.
+
+        Returns:
+            str: A directory path.
+        """
+        return self.getFullPath(self.getMetadataKey(ProjectDataKey.exportTextureDir))
+
+    def getExportPackageDirectories(self):
+        """
+        Gets the full path of all export package directories.
+
+        Returns:
+            list[str]: A directory path.
+        """
+        return self.getMetadataKey(ProjectDataKey.exportPackageDirs)
+
+    def getExportSkeletonHkx(self):
+        """
+        Gets the full path of the export skeleton hkx file.
+
+        Returns:
+            str: A file path.
+        """
+        return self.getFullPath(self.getMetadataKey(ProjectDataKey.exportSkeletonHkx))
+
+    def getExportSkeletonNif(self):
+        """
+        Gets the full path of the export skeleton nif file.
+
+        Returns:
+            str: A file path.
+        """
+        return self.getFullPath(self.getMetadataKey(ProjectDataKey.exportSkeletonNif))
+
+    def getExportAnimationSkeletonHkx(self):
+        """
+        Gets the full path of the export animation skeleton hkx file.
+
+        Returns:
+            str: A file path.
+        """
+        return self.getFullPath(self.getMetadataKey(ProjectDataKey.exportAnimationSkeletonHkx))
+
+    def getExportSkinNif(self):
+        """
+        Gets the full path of the export skeleton nif file.
+
+        Returns:
+            str: A file path.
+        """
+        return self.getFullPath(self.getMetadataKey(ProjectDataKey.exportSkinNif))
+
+    def getExportAnimationDirectory(self):
+        """
+        Gets the full path of the export animation directory.
+
+        Returns:
+            str: A directory path.
+        """
+        return self.getFullPath(self.getMetadataKey(ProjectDataKey.exportAnimationDir))
+
+    def getExportJointName(self): return self.getMetadataKey(ProjectDataKey.exportJointName)
+    def getExportMeshName(self): return self.getMetadataKey(ProjectDataKey.exportMeshName)
+
+    def getExportBehaviorDirectory(self):
+        """
+        Gets the full path of the export behavior directory.
+
+        Returns:
+            str: A directory path.
+        """
+        return self.getFullPath(self.getMetadataKey(ProjectDataKey.exportBehaviorDir))
+
+    def getExportCacheFile(self):
+        """
+        Gets the full path of the export cache file.
+
+        Returns:
+            str: A file path.
+        """
+        return self.getFullPath(self.getMetadataKey(ProjectDataKey.exportCacheTxt))
+
+    def getExportAnimationDataDirectory(self):
+        """
+        Gets the full path of the export animation data directory.
+
+        Returns:
+            str: A directory path.
+        """
+        return self.getFullPath(self.getMetadataKey(ProjectDataKey.exportAnimationDataDir))
 
     # ---- Control Joints ---- #
-    def getControlJointMapping(self): return self.getMetadataKey(self.controlJointMapping, {})
-    def setControlJointMapping(self, mapping): self.setMetadataKey(self.controlJointMapping, mapping)
+    def getControlJointMapping(self): return self.getMetadataKey(ProjectDataKey.controlJointMapping)
+    def setControlJointMapping(self, mapping): self.setMetadataKey(ProjectDataKey.controlJointMapping, mapping)
     def setControlJoint(self, control, joint):
         mapping = self.getControlJointMapping()
         mapping[control] = joint
@@ -323,6 +636,17 @@ def getProject(path=None):
         return None
 
 
+def getRecentProjects():
+    """
+    Gets a list of recent Skyrim projects.
+
+    Returns:
+        list[str]: A list of project directories.
+    """
+    maxSize = cmds.optionVar(q='RecentProjectsMaxSize')
+    return [directory for directory in cmds.optionVar(q='RecentProjectsList') if isProject(directory)][:maxSize]
+
+
 def setProject(directory=None):
     """
     Sets the current project directory.
@@ -336,7 +660,9 @@ def setProject(directory=None):
         raise ProjectError('%s is not a valid project.' % directory)
 
     # Set the maya project
-    cmds.workspace(project.getDirectory(), o=True)
+    directory = project.getDirectory().replace('\\', '/')
+    mel.eval(f'setProject "{directory}"')
+    # cmds.workspace(project.getDirectory(), o=True)
 
     return
 
@@ -363,7 +689,7 @@ def createProject(directory, name):
 
     # Create the project meta data
     with open(os.path.join(directory, 'metadata.json'), 'w+') as openfile:
-        json.dump({}, openfile)
+        json.dump({ProjectDataKey.projectName.value: name}, openfile)
 
     # Create the workspace.mel file manually
     workspaceFile = os.path.join(directory, 'workspace.mel')
