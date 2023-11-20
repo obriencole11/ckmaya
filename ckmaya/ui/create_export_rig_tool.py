@@ -9,7 +9,7 @@ from maya import cmds
 import maya.api.OpenMaya as om2
 from ..core import ckproject, ckcore, ckphysics
 from ..ui.core import MayaWindow, getDirectoryDialog, getFileDialog, getNameDialog, saveChangesDialog, \
-    replaceFileDialog, getFilesDialog
+    replaceFileDialog, getFilesDialog, errorDecorator
 from ..thirdparty.Qt import QtWidgets, QtGui, QtCore
 
 
@@ -57,6 +57,7 @@ class ExportRigWindow(MayaWindow):
         self._meshButton.pressed.connect(self.createExportMesh)
         self.getMainLayout().addWidget(self._meshButton)
 
+    @errorDecorator
     def addExportJointHierarchy(self):
         try:
             with undo():
@@ -85,6 +86,7 @@ class ExportRigWindow(MayaWindow):
         finally:
             self._connectButton.setDown(False)
 
+    @errorDecorator
     def addExportJoint(self):
         try:
             with undo():
@@ -113,6 +115,7 @@ class ExportRigWindow(MayaWindow):
         finally:
             self._connectButton.setDown(False)
 
+    @errorDecorator
     def connectExportJoint(self):
         try:
             with undo():
@@ -142,6 +145,7 @@ class ExportRigWindow(MayaWindow):
         finally:
             self._connectButton.setDown(False)
 
+    @errorDecorator
     def createExportMesh(self):
         try:
             with undo():

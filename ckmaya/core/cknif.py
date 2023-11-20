@@ -198,6 +198,8 @@ def setMeshTextures(data, mesh, albedo=None, normal=None, emissive=None, cubemap
     for property in tri_shape.bs_properties:
         if property is None:
             continue
+        if not isinstance(property, NifFormat.BSLightingShaderProperty):
+            continue
         texture_set = property.texture_set
         if albedo is not None:
             texture_set.textures[0] = albedo.replace('/', '\\').encode()
@@ -270,17 +272,26 @@ def fixNifMeshes(data, meshes):
                 nif_vertex_data[nif_vertex] = (normal, tangent, binormal)
 
         # Apply vertex data
-        # Todo remove this, it doesn't work sadly :(
-        # for vertex, (normal, tangent, binormal) in nif_vertex_data.items():
-        #     tri_shape.data.normals[vertex].x = normal[0]
-        #     tri_shape.data.normals[vertex].y = -normal[2]
-        #     tri_shape.data.normals[vertex].z = normal[1]
-        #     tri_shape.data.tangents[vertex].x = tangent[0]
-        #     tri_shape.data.tangents[vertex].y = -tangent[2]
-        #     tri_shape.data.tangents[vertex].z = tangent[1]
-        #     tri_shape.data.bitangents[vertex].x = binormal[0]
-        #     tri_shape.data.bitangents[vertex].y = -binormal[2]
-        #     tri_shape.data.bitangents[vertex].z = binormal[1]
+        for vertex, (normal, tangent, binormal) in nif_vertex_data.items():
+            x = tri_shape.data.normals[vertex].x
+            y = tri_shape.data.normals[vertex].y
+            z = tri_shape.data.normals[vertex].z
+            tri_shape.data.normals[vertex].x = x
+            tri_shape.data.normals[vertex].y = -z
+            tri_shape.data.normals[vertex].z = y
+        tri_shape.update_tangent_space()
+
+        # Apply back facing culling
+        if cmds.getAttr('%s.doubleSided' % mesh):
+            tri_shape.bs_properties[0].shader_flags_2.slsf_2_double_sided = 1
+
+        # Add alpha property
+        alpha_property = NifFormat.NiAlphaProperty(parent=tri_shape)
+        alpha_property.flags = 4844
+        alpha_property.threshold = 6
+        tri_shape.bs_properties.append(alpha_property)
+        tri_shape.bs_properties[1] = alpha_property
+        tri_shape.bs_properties.update_size()
 
         # Get the meshes skin instance
         skin_instance = tri_shape.skin_instance

@@ -4,7 +4,7 @@ from .core import ProjectModel, ProjectDataWidget, EditableListWidget, infoDialo
 from ..core import ckproject, ckcore, ckphysics
 from ..core.ckproject import ProjectDataKey
 from ..ui.core import MayaWindow, getDirectoryDialog, getFileDialog, getNameDialog, saveChangesDialog, \
-    replaceFileDialog, getFilesDialog
+    replaceFileDialog, getFilesDialog, errorDecorator
 from ..thirdparty.Qt import QtWidgets, QtGui, QtCore
 
 
@@ -28,6 +28,7 @@ class ExportSkinWindow(MayaWindow):
 
         # Export directory
         settingLayout.addWidget(ProjectDataWidget(ckproject.ProjectDataKey.skeletonSceneFile, self._model, parent=self))
+        settingLayout.addWidget(ProjectDataWidget(ckproject.ProjectDataKey.exportTextureDir, self._model, parent=self))
         settingLayout.addWidget(ProjectDataWidget(ckproject.ProjectDataKey.exportMeshName, self._model, parent=self))
         settingLayout.addWidget(ProjectDataWidget(ckproject.ProjectDataKey.exportSkinNif, self._model, parent=self))
 
@@ -37,13 +38,14 @@ class ExportSkinWindow(MayaWindow):
         self.exportButton.pressed.connect(self.exportPressed)
         self.getMainLayout().addWidget(self.exportButton)
 
+    @errorDecorator
     def exportPressed(self):
         """ Exports the project as a package. """
         try:
-            count = ckcore.exportSkin()
+            ckcore.exportSkin()
+            ckcore.exportPackage()
         finally:
             self.exportButton.setDown(False)
-
 
 
 def load():

@@ -11,7 +11,7 @@ from .core import ProjectModel, ProjectDataWidget, ProjectDirectoryWidget, Proje
 from ..core import ckproject, ckcore, ckphysics
 from ..core.ckproject import ProjectDataKey
 from ..ui.core import MayaWindow, getDirectoryDialog, getFileDialog, getNameDialog, saveChangesDialog, \
-    replaceFileDialog, getFilesDialog, EditableTableWidget
+    replaceFileDialog, getFilesDialog, EditableTableWidget, errorDecorator
 from ..thirdparty.Qt import QtWidgets, QtGui, QtCore
 
 
@@ -24,12 +24,23 @@ class ImportMappingEditor(ProjectWindow):
         self.getContentLayout().setAlignment(QtCore.Qt.AlignCenter | QtCore.Qt.AlignTop)
         self.setMinimumWidth(300)
 
+        # Settings
+        settingGroup = QtWidgets.QGroupBox('Settings', self)
+        self.getContentLayout().addWidget(settingGroup)
+        settingLayout = QtWidgets.QVBoxLayout()
+        settingGroup.setLayout(settingLayout)
+
+        # Import directory
+        settingLayout.addWidget(
+            ProjectDataWidget(ckproject.ProjectDataKey.importJointName, self.getModel(), parent=self)
+        )
+
         # Mapping Table
         self.mappingTable = EditableTableWidget(self)
         self.mappingTable.setColumns(['Control', 'Joint'])
         self.mappingTable.addPressed.connect(self.addMapping)
         self.mappingTable.removePressed.connect(self.removeMapping)
-        self.mappingTable.table().setSortingEnabled(True)
+        self.mappingTable.view().setSortingEnabled(True)
         self.getContentLayout().addWidget(self.mappingTable)
 
         # Test Button
@@ -41,6 +52,7 @@ class ImportMappingEditor(ProjectWindow):
         self.loadMapping()
         self.getModel().dataChanged.connect(self.loadMapping)
 
+    @errorDecorator
     def testMapping(self):
         try:
             if saveChangesDialog():

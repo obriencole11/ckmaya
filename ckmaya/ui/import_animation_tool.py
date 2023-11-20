@@ -11,7 +11,7 @@ from .core import ProjectModel, ProjectDataWidget, ProjectDirectoryWidget, Proje
 from ..core import ckproject, ckcore, ckphysics
 from ..core.ckproject import ProjectDataKey
 from ..ui.core import MayaWindow, getDirectoryDialog, getFileDialog, getNameDialog, saveChangesDialog, \
-    replaceFileDialog, getFilesDialog
+    replaceFileDialog, getFilesDialog, errorDecorator
 from ..thirdparty.Qt import QtWidgets, QtGui, QtCore
 
 
@@ -40,6 +40,9 @@ class AnimationImporter(ProjectWindow):
         settingLayout.addWidget(
             ProjectDataWidget(ckproject.ProjectDataKey.controlJointMapping, self.getModel(), parent=self)
         )
+        settingLayout.addWidget(
+            ProjectDataWidget(ckproject.ProjectDataKey.importJointName, self.getModel(), parent=self)
+        )
 
         # Animation widget
         self.animationList = ProjectDirectoryWidget(
@@ -55,13 +58,16 @@ class AnimationImporter(ProjectWindow):
 
         self.updateProject(force=True)
 
+    @errorDecorator
     def importScene(self):
         """ Imports the selected animations. """
 
         # Prompt user to save changes first
         if not saveChangesDialog():
-            for filepath in self.animationList.getSelectedFiles():
-                ckcore.importAnimation(filepath)
+            return
+
+        for filepath in self.animationList.getSelectedFiles():
+            ckcore.importAnimation(filepath)
 
         try:
             QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)

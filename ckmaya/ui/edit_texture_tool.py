@@ -5,7 +5,7 @@ from .core import ProjectModel, ProjectDataWidget, EditableListWidget
 from ..core import ckproject, ckcore, ckphysics
 from ..core.ckproject import ProjectDataKey
 from ..ui.core import MayaWindow, getDirectoryDialog, getFileDialog, getNameDialog, saveChangesDialog, \
-    replaceFileDialog, getFilesDialog
+    replaceFileDialog, getFilesDialog, errorDecorator
 from ..thirdparty.Qt import QtWidgets, QtGui, QtCore
 
 
@@ -163,6 +163,7 @@ class EditTextureWindow(MayaWindow):
             self.importButton.setEnabled(True)
             break
 
+    @errorDecorator
     def importPressed(self):
         try:
             ckcore.setTextures(

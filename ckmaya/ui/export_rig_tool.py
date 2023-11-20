@@ -11,7 +11,7 @@ from .core import ProjectModel, ProjectDataWidget
 from ..core import ckproject, ckcore, ckphysics
 from ..core.ckproject import ProjectDataKey
 from ..ui.core import MayaWindow, getDirectoryDialog, getFileDialog, getNameDialog, saveChangesDialog, \
-    replaceFileDialog, getFilesDialog
+    replaceFileDialog, getFilesDialog, errorDecorator
 from ..thirdparty.Qt import QtWidgets, QtGui, QtCore
 
 
@@ -45,6 +45,7 @@ class ExportRigWindow(MayaWindow):
         self.exportButton.pressed.connect(self.exportPressed)
         self.getMainLayout().addWidget(self.exportButton)
 
+    @errorDecorator
     def exportPressed(self):
         """ Exports the project as a package. """
         try:

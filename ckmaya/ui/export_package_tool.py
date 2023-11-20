@@ -5,7 +5,7 @@ from .core import ProjectModel, ProjectDataWidget, EditableListWidget, infoDialo
 from ..core import ckproject, ckcore, ckphysics
 from ..core.ckproject import ProjectDataKey
 from ..ui.core import MayaWindow, getDirectoryDialog, getFileDialog, getNameDialog, saveChangesDialog, \
-    replaceFileDialog, getFilesDialog
+    replaceFileDialog, getFilesDialog, errorDecorator
 from ..thirdparty.Qt import QtWidgets, QtGui, QtCore
 
 
@@ -63,6 +63,7 @@ class ExportPackageWindow(MayaWindow):
         self.directoryList.removeSelected()
         self._model.setData(ProjectDataKey.exportPackageDirs, self.directoryList.getItems())
 
+    @errorDecorator
     def exportPressed(self):
         """ Exports the project as a package. """
         try:
@@ -70,7 +71,6 @@ class ExportPackageWindow(MayaWindow):
             infoDialog('Successfully merged %s assets.' % count, title='Export Successful')
         finally:
             self.exportButton.setDown(False)
-
 
 
 def load():

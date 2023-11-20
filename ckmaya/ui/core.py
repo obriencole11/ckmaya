@@ -1,8 +1,11 @@
 """ Core UI functions. """
 import os
+import sys
+import traceback
 from maya import cmds
+import maya.OpenMaya as om
 import maya.api.OpenMaya as om2
-from functools import partial
+from functools import partial, wraps
 from ..core import ckproject
 from ..thirdparty.Qt import QtWidgets, QtCore, QtGui
 
@@ -114,6 +117,29 @@ def infoDialog(message, title=None):
     ) == QtWidgets.QMessageBox.Ok
 
 
+def confirmDialog(message, title='Confirm Dialog'):
+    """
+    Prompts the user with a yes or no question.
+
+    Args:
+        message(str): The question being asked.
+        title(str): The dialog title.
+
+    Returns:
+        bool: Whether the dialog whas confirmed.
+    """
+    result = cmds.confirmDialog(
+        title=title,
+        message=message,
+        button=["Yes", "No"],
+        defaultButton='No',
+        cancelButton='No'
+    )
+    if result == 'No':
+        return False
+    return True
+
+
 def warningDialog(message, title=None):
     """
     Displays an warning dialog message.
@@ -134,24 +160,56 @@ def warningDialog(message, title=None):
     ) == QtWidgets.QMessageBox.Ok
 
 
-def errorDialog(message, title=None):
+def errorDialog(message, details=None, title=None):
     """
     Displays an warning error message.
 
     Args:
-        message(str): The message.
+        message(str): The error message.
+        details(str): The error stack trace.
         title(str): The window title.
 
     Returns:
         bool: Whether the dialog was confirmed.
     """
-    return QtWidgets.QMessageBox.critical(
-        getMayaMainWindow(),
-        title or 'Error',
-        message,
-        QtWidgets.QMessageBox.Ok,
-        QtWidgets.QMessageBox.Cancel
-    ) == QtWidgets.QMessageBox.Ok
+    dialog = QtWidgets.QMessageBox()
+    dialog.setWindowTitle(title)
+    dialog.setIcon(QtWidgets.QMessageBox.Critical)
+    dialog.setText(message)
+    if details:
+        dialog.setDetailedText(details)
+    dialog.setWindowIcon(dialog.style().standardIcon(QtWidgets.QStyle.SP_MessageBoxCritical))
+    dialog.setStandardButtons(QtWidgets.QMessageBox.Ok)
+    return dialog.exec_() == QtWidgets.QMessageBox.Ok
+
+
+def errorDecorator(func):
+    """
+    A decorator that shows an error dialog if an exception it raised.
+
+    Args:
+        func(func): The function to wrap.
+    """
+    @wraps(func)
+    def inner(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception:
+            ex_type, ex, tb = sys.exc_info()
+            if not issubclass(ex_type, FilePathException) and not issubclass(ex_type, CancelDialogException):
+                errorDialog(str(ex), details=''.join(traceback.format_tb(tb)), title=ex_type.__name__)
+                raise
+    return inner
+
+
+def getSceneName():
+    """
+    Gets the current open scene name.
+
+    Returns:
+        str: The scene name.
+    """
+    return om.MFileIO().currentFile()
 
 
 def saveChangesDialog():
@@ -163,7 +221,7 @@ def saveChangesDialog():
     """
     result = cmds.confirmDialog(
         title='Save Changes',
-        message='Save changes to %s?' % cmds.file(sn=True, q=True),
+        message='Save changes to %s?' % getSceneName(),
         button=["Save", "Don't Save", "Cancel"],
         defaultButton='Save',
         cancelButton='Cancel'
@@ -371,6 +429,7 @@ class EditableTableWidget(QtWidgets.QWidget):
 
     addPressed = QtCore.Signal()
     removePressed = QtCore.Signal()
+    dataChanged = QtCore.Signal()
     textDoubleClicked = QtCore.Signal(str)
 
     def __init__(self, parent=None):
@@ -383,27 +442,56 @@ class EditableTableWidget(QtWidgets.QWidget):
         self.setLayout(layout)
 
         # Button Layout
-        buttonLayout = QtWidgets.QHBoxLayout()
-        buttonLayout.setContentsMargins(0,0,0,0)
-        buttonLayout.setAlignment(QtCore.Qt.AlignRight)
-        layout.addLayout(buttonLayout)
+        self.buttonLayout = QtWidgets.QHBoxLayout()
+        self.buttonLayout.setContentsMargins(0,0,0,0)
+        self.buttonLayout.setAlignment(QtCore.Qt.AlignRight)
+        layout.addLayout(self.buttonLayout)
 
         # Add Button
-        self.addButton = QtWidgets.QPushButton(icon=QtGui.QIcon('://addCreateGeneric.png'), parent=self)
-        self.addButton.setFlat(True)
-        self.addButton.pressed.connect(self.addPressed)
-        buttonLayout.addWidget(self.addButton)
+        addButton = QtWidgets.QPushButton(icon=QtGui.QIcon('://addCreateGeneric.png'), parent=self)
+        addButton.setFlat(True)
+        addButton.pressed.connect(self.addPressed)
+        self.buttonLayout.addWidget(addButton)
 
         # Remove Button
         removeButton = QtWidgets.QPushButton(icon=QtGui.QIcon('://delete.png'), parent=self)
         removeButton.setFlat(True)
         removeButton.pressed.connect(self.removePressed)
-        buttonLayout.addWidget(removeButton)
+        self.buttonLayout.addWidget(removeButton)
+
+        self.buttons = [addButton, removeButton]
 
         # List
-        self._table = QtWidgets.QTableWidget(self)
-        self._table.verticalHeader().hide()
-        layout.addWidget(self._table)
+        self._view = QtWidgets.QTableView(self)
+        self._view.verticalHeader().hide()
+        layout.addWidget(self._view)
+
+        # Model
+        self._model = QtGui.QStandardItemModel(self)
+        self._model.dataChanged.connect(self.onItemChanged)
+        self._view.setModel(self._model)
+
+    def addButton(self, icon):
+        """
+        Adds a button to the list header.
+
+        Args:
+            icon(str): An icon path.
+
+        Returns:
+            QtWidgets.QPushbutton: The button.
+        """
+        button = QtWidgets.QPushButton(icon=QtGui.QIcon(icon), parent=self)
+        button.setFlat(True)
+        self.buttonLayout.insertWidget(0, button)
+        self.buttons.append(button)
+        return button
+
+    def onItemChanged(self, *args):
+        """
+        Emits the data changed signal when something changes.
+        """
+        self.dataChanged.emit()
 
     def setColumns(self, columns):
         """
@@ -412,26 +500,35 @@ class EditableTableWidget(QtWidgets.QWidget):
         Args:
             columns(list[str]): A list of column names.
         """
-        self._table.setColumnCount(len(columns))
-        self._table.setHorizontalHeaderLabels(columns)
-        self._table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
-        self._table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
+        self._model.setColumnCount(len(columns))
+        self._model.setHorizontalHeaderLabels(columns)
+        self._view.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
+        self._view.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
 
-    def table(self):
+    def model(self):
+        """
+        Gets the model.
+
+        Returns:
+            QtGui.QStandardItemModel: The model.
+        """
+        return self._model
+
+    def view(self):
         """
         Gets the table widget.
 
         Returns:
             QtWidgets.QTableWidget: The table.
         """
-        return self._table
+        return self._view
 
     def removeSelected(self):
         """
         Removes the selected items from the list.
         """
-        for index in reversed(self._table.selectedIndexes()):
-            self._table.removeRow(index.row())
+        for index in reversed(self._view.selectedIndexes()):
+            self._model.takeRow(index.row())
 
     def addItem(self, row):
         """
@@ -440,11 +537,12 @@ class EditableTableWidget(QtWidgets.QWidget):
         Args:
             row(list[str]): A list of text to add.
         """
-        index = self._table.rowCount()
-        self._table.insertRow(index)
+        items = []
         for col, text in enumerate(row):
-            item = QtWidgets.QTableWidgetItem(text)
-            self._table.setItem(index, col, item)
+            item = QtGui.QStandardItem()
+            item.setText(str(text))
+            items.append(item)
+        self._model.appendRow(items)
 
     def addItems(self, rows):
         """
@@ -464,23 +562,24 @@ class EditableTableWidget(QtWidgets.QWidget):
             list[str]: A list of text.
         """
         items = []
-        for row in range(self._table.rowCount()):
+        for row in range(self._model.rowCount()):
             item = []
-            for col in range(self._table.columnCount()):
-                item.append(self._table.item(row, col).text())
+            for col in range(self._model.columnCount()):
+                item.append(self._model.item(row, col).text())
             items.append(item)
         return items
 
     def clear(self):
         """ Removes all items. """
-        self._table.clearContents()
-        self._table.setRowCount(0)
+        # self._model.clearContents()
+        self._model.setRowCount(0)
 
     def resetButtons(self):
         """
         Resets all buttons.
         """
-        self.addButton.setDown(False)
+        for button in self.buttons:
+            button.setDown(False)
 
 
 class DirectoryListDialog(QtWidgets.QDialog):
@@ -576,7 +675,7 @@ class StringMappingDialog(QtWidgets.QDialog):
 
         # Mapping List
         self.mappingList = EditableTableWidget(self)
-        self.mappingList.table().setSortingEnabled(True)
+        self.mappingList.view().setSortingEnabled(True)
         self.mappingList.addPressed.connect(self.addPressed)
         self.mappingList.removePressed.connect(self.removePressed)
         self.mappingList.setColumns(['Key', 'Value'])
@@ -1350,6 +1449,7 @@ class ProjectWindow(MayaWindow):
     """ A maya window that includes a project model. """
 
     projectChanged = QtCore.Signal()
+    sceneChanged = QtCore.Signal()
 
     def __init__(self):
         super(ProjectWindow, self).__init__()
@@ -1390,7 +1490,10 @@ class ProjectWindow(MayaWindow):
         self._contentWidget.setLayout(self._contentLayout)
 
         # Add a callback to update the project when it changes
-        self.callbacks = [om2.MEventMessage.addEventCallback('workspaceChanged', self.updateProject)]
+        self.callbacks = [
+            om2.MEventMessage.addEventCallback('workspaceChanged', self.updateProject),
+            om2.MSceneMessage.addCallback(om2.MSceneMessage.kAfterOpen, self.onSceneChange)
+        ]
         self.closed.connect(self.removeCallbacks)
 
     def removeCallbacks(self):
@@ -1456,6 +1559,10 @@ class ProjectWindow(MayaWindow):
         # self._projectText.setText('<h2>%s Project</h2>' % (name))
         windowTitle = self.windowTitle().split('(')[0]
         self.setWindowTitle('%s (%s)' % (windowTitle, name))
+
+    def onSceneChange(self, *args):
+        """ Sends a signal when the scene changes. """
+        self.sceneChanged.emit()
 
     def updateProject(self, *args, force=False):
         """

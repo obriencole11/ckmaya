@@ -7,7 +7,7 @@ from maya import cmds
 from ..core import ckproject, ckcore, ckphysics
 from ..ui.core import MayaWindow, getDirectoryDialog, getFileDialog, getNameDialog, saveChangesDialog, \
     replaceFileDialog, getFilesDialog, ProjectDirectoryBox, ProjectListBox, ProjectModel, ProjectWindow, \
-    ProjectDataWidget, ProjectDirectoryWidget
+    ProjectDataWidget, ProjectDirectoryWidget, errorDecorator
 from ..thirdparty.Qt import QtWidgets, QtGui, QtCore
 
 
@@ -22,6 +22,10 @@ class ImportAnimationTagWindow(ProjectWindow):
         # Animation Tag Directory Box
         directoryBox = ProjectDataWidget(ckproject.ProjectDataKey.animationTagDir, self.getModel(), parent=self)
         self.getContentLayout().addWidget(directoryBox)
+
+        # Root Joint Box
+        jointBox = ProjectDataWidget(ckproject.ProjectDataKey.exportJointName, self.getModel(), parent=self)
+        self.getContentLayout().addWidget(jointBox)
 
         # Animation Tag List
         self.tagBox = ProjectDirectoryWidget(ckproject.ProjectDataKey.animationTagDir, self.getModel(), parent=self)
@@ -54,8 +58,9 @@ class ImportAnimationTagWindow(ProjectWindow):
         buttonLayout.addWidget(self.exportBox)
 
         # Update the project
-        self.updateProject()
+        self.updateProject(force=True)
 
+    @errorDecorator
     def _importTags(self, tags):
         """
         Batch imports the given tag files.

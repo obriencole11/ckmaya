@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import tempfile
@@ -10,6 +11,7 @@ from maya import cmds, mel
 
 
 IMAGE_MAGICK_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'bin', 'imagemagick')
+MAX_PARTITION_INFLUENCES = 80
 
 
 def copyTagAttribiutes(srcRoot, dstRoot):
@@ -204,7 +206,7 @@ def exportFbx(nodes, path):
     Exports the given nodes as an fbx file.
 
     Args:
-        nodes(list): A list of nodes to export.
+        nodes(list[str]): A list of nodes to export.
         path(str): The destination fbx file path.
 
     Returns:
@@ -365,7 +367,7 @@ def importAnimation(animation, animationTags=None):
     project = ckproject.getProject()
     skeletonScene = project.getSkeletonScene()
     animationDir = project.getAnimationSceneDirectory()
-    exportJointName = project.getExportJointName()
+    importJointName = project.getImportJointName()
     jointMapping = project.getControlJointMapping()
 
     # Convert HKX animations
@@ -409,7 +411,7 @@ def importAnimation(animation, animationTags=None):
     referenceRoot = None
     for name in rigNodes:
         nodeName = name.split('|')[-1].split(':')[-1]
-        if nodeName == exportJointName:
+        if nodeName == importJointName:
             referenceRoot = name
     if referenceRoot is None:
         raise BaseException('Could not find export joint in referenced skeleton.')
@@ -467,6 +469,9 @@ def importAnimation(animation, animationTags=None):
     # Import animation
     importFbx(animation, update=True)
 
+    # Ensure the framerate is 30fps
+    cmds.currentUnit(time='ntsc')
+
     # Bake controls animation
     if len(controls) > 0:
         bakeAnimation(controls)
@@ -498,29 +503,102 @@ def moveSkeletonAnimation(root, oldTime, newTime):
             cmds.keyframe('%s.%s' % (joint, attribute), relative=True, timeChange=newTime[0] - oldTime[0], e=True)
 
 
+EXPORT_NODE = 'CKMAYA_EXPORT_DATA'
+EXPORT_ATTR = 'exportData'
+
+
+def getAnimationExportNode():
+    """
+    Creates an export node if one does not exist.
+
+    Returns:
+        str: An export node name.
+    """
+
+    if not cmds.objExists(EXPORT_NODE):
+
+        # Create the export node
+        exportNode = cmds.createNode('network', name=EXPORT_NODE, ss=True)
+        cmds.addAttr(exportNode, ln=EXPORT_ATTR, dt='string')
+
+        # Determine the export path
+        start, end = getDefaultTimeRange()
+        filepath = os.path.basename(ckproject.getSceneName()).split('.')[0]
+        defaultData = [{
+            'start': start,
+            'end': end,
+            'name': filepath
+        }]
+        cmds.setAttr('%s.%s' % (EXPORT_NODE, EXPORT_ATTR), json.dumps(defaultData), type='string')
+        cmds.setAttr('%s.%s' % (EXPORT_NODE, EXPORT_ATTR), lock=True)
+
+    return EXPORT_NODE
+
+
+def getAnimationExportData():
+    """
+    Gets the scene export data.
+    If no data exists, default data will be created.
+
+    Returns:
+        list[dict(str: Any)]: A list of export data.
+    """
+    return json.loads(cmds.getAttr('%s.%s' % (getAnimationExportNode(), EXPORT_ATTR)))
+
+
+def setAnimationExportData(data):
+    """
+    Sets the scenes export data.
+
+    Args:
+        data(list[dict[str, Any]]): A list of export data.
+    """
+    exportNode = getAnimationExportNode()
+    cmds.setAttr('%s.%s' % (exportNode, EXPORT_ATTR), lock=False)
+    cmds.setAttr('%s.%s' % (exportNode, EXPORT_ATTR), json.dumps(data), type='string')
+    cmds.setAttr('%s.%s' % (exportNode, EXPORT_ATTR), lock=True)
+
+
+def exportSceneAnimation(format=None):
+    """
+    Exports animations from the current scenes export data.
+
+    Args:
+        format(str): The export file format. Currently either 'hkx' or 'fbx'. Defaults to 'hkx'.
+    """
+    exportData = getAnimationExportData()
+    for data in exportData:
+        start = float(data['start'])
+        end = float(data['end'])
+        name = os.path.normpath(data['name'])
+        exportAnimation(name, (start, end), format=format)
+
+
 def exportAnimation(name=None, time=None, format=None):
     """
-    Exports the current scene animation.
+    Exports animation in the current scene.
 
     Args:
         name(str): The export animation name.
         time(tuple): The start and end time range to export.
         format(str): The export file format. Currently either 'hkx' or 'fbx'. Defaults to 'hkx'.
     """
+
+    # Get scene export data
     format = format or 'hkx'
-    _start, _end = getDefaultTimeRange()
-    start, end = time if time is not None else getDefaultTimeRange()
+    start, end = time
+
+    # Get project data
     project = ckproject.getProject()
-    # exportSkeletonHkxFile = project.getExportSkeletonHkx()
     exportSkeletonHkxFile = project.getExportAnimationSkeletonHkx()
     exportBehaviorDir = project.getExportBehaviorDirectory()
     exportCacheFile = project.getExportCacheFile()
+    exportAnimationDir = project.getExportAnimationDirectory()
 
     # Get the export animation file
-    exportAnimationDir = project.getExportAnimationDirectory()
-    animationName = name or os.path.basename(ckproject.getSceneName()).split('.')[0]
-    exportAnimationFbxFile = os.path.join(exportAnimationDir, '%s.fbx' % animationName)
-    exportAnimationHkxFile = os.path.join(exportAnimationDir, '%s.hkx' % animationName)
+    # animationName = name or os.path.basename(ckproject.getSceneName()).split('.')[0]
+    exportAnimationFbxFile = os.path.join(exportAnimationDir, '%s.fbx' % name)
+    exportAnimationHkxFile = os.path.join(exportAnimationDir, '%s.hkx' % name)
 
     # Get the export joint name
     exportJointName = project.getExportJointName()
@@ -602,7 +680,7 @@ def exportAnimation(name=None, time=None, format=None):
     finally:
         cmds.undoInfo(closeChunk=True)
         cmds.undo()
-        cmds.playbackOptions(minTime=_start, maxTime=_end)
+        cmds.playbackOptions(minTime=start, maxTime=end)
 
 
 def importMesh(filepath):
@@ -831,7 +909,7 @@ def createJointControlMapping(joint=None, controls=None):
     project = ckproject.getProject()
 
     # Find the project export joint
-    root = project.getExportJointName()
+    root = project.getImportJointName()
     if root is None or not cmds.objExists(root):
         cmds.warning('%s is not a valid root joint node.' % root)
         return None, None
@@ -1357,7 +1435,7 @@ def exportRig():
 
     try:
         cmds.undoInfo(openChunk=True)
-        toExport = exportSkeleton
+        toExport = exportSkeleton + ['BoundingBox']
 
         # Remove all joint constraints
         constraints = cmds.listRelatives(exportRootJoint, ad=True, type='constraint') or []
@@ -1451,6 +1529,11 @@ def exportSkin():
         if cluster is None:
             raise Exception('%s is not skinned.' % mesh)
 
+        # Check if weighted influences exceed maximum
+        if len(cmds.skinCluster(cluster, wi=True, q=True)) > MAX_PARTITION_INFLUENCES:
+            meshName = mesh.split('|')[-1]
+            raise Exception('"%s" has more than %s weighted influences.' % (meshName, MAX_PARTITION_INFLUENCES))
+
         # Check for skinned rigid body joints
         influences = cmds.skinCluster(cluster, inf=True, q=True)
         rbInfluences = []
@@ -1474,7 +1557,7 @@ def exportSkin():
 
     try:
         cmds.undoInfo(openChunk=True)
-        toExport = exportSkeleton
+        toExport = exportSkeleton + ['BoundingBox']
 
         for mesh in meshes:
             toExport.append(cmds.listRelatives(mesh, parent=True, fullPath=True)[0])

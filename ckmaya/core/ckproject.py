@@ -99,6 +99,7 @@ class ProjectDataKey(enum.Enum):
     importCacheTxt = 'importcache.txt'
     importAnimationDir = 'importanimations'
     importBehaviorDir = 'importbehaviors'
+    importJointName = 'importjointname'
     controlJointMapping = 'controlJointMapping'
 
     # Scene Files
@@ -146,6 +147,7 @@ class ProjectDataKey(enum.Enum):
             self.exportPackageDirs: 'Export Package Dirs',
             self.exportDir: 'Export Dir',
             self.exportJointName: 'Export Joint Name',
+            self.importJointName: 'Import Joint Name',
             self.exportMeshName: 'Export Mesh Name',
             self.exportSkeletonHkx: 'Export Skeleton Hkx',
             self.exportSkeletonNif: 'Export Skeleton Nif',
@@ -176,6 +178,7 @@ class ProjectDataKey(enum.Enum):
             self.exportPackageDirs: ProjectDataCategory.Export,
             self.exportDir: ProjectDataCategory.Export,
             self.exportJointName: ProjectDataCategory.Export,
+            self.importJointName: ProjectDataCategory.Import,
             self.exportMeshName: ProjectDataCategory.Export,
             self.exportSkeletonHkx: ProjectDataCategory.Export,
             self.exportSkeletonNif: ProjectDataCategory.Export,
@@ -205,6 +208,7 @@ class ProjectDataKey(enum.Enum):
             self.animationTagDir: ProjectDataType.Directory,
             self.exportDir: ProjectDataType.Directory,
             self.exportJointName: ProjectDataType.NodeName,
+            self.importJointName: ProjectDataType.NodeName,
             self.exportMeshName: ProjectDataType.NodeName,
             self.exportSkeletonHkx: ProjectDataType.HkxFile,
             self.exportSkeletonNif: ProjectDataType.NifFile,
@@ -222,7 +226,9 @@ class ProjectDataKey(enum.Enum):
     @property
     def description(self):
         return {
-            self.exportAnimationSkeletonHkx: 'The legacy skeleton HKX file used for export animations.'
+            self.exportAnimationSkeletonHkx: 'The legacy skeleton HKX file used for export animations.',
+            self.importJointName: 'The root joint of the skeleton used to import animation.',
+            self.exportJointName: 'The root joint of the skeleton used to export animation.',
         }.get(self, '')
 
 
@@ -532,6 +538,7 @@ class Project(object):
         return self.getFullPath(self.getMetadataKey(ProjectDataKey.exportAnimationDir))
 
     def getExportJointName(self): return self.getMetadataKey(ProjectDataKey.exportJointName)
+    def getImportJointName(self): return self.getMetadataKey(ProjectDataKey.importJointName)
     def getExportMeshName(self): return self.getMetadataKey(ProjectDataKey.exportMeshName)
 
     def getExportBehaviorDirectory(self):

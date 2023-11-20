@@ -141,6 +141,21 @@ def getRigidBody(node):
     return None
 
 
+def getSceneRigidbodies():
+    """
+    Gets all rigid body joints in the scene.
+
+    Returns:
+        list[str]: A list of joint names.
+    """
+    rigidbodies = []
+    for node in cmds.ls(type='joint'):
+        rb = getRigidBody(node)
+        if rb is not None:
+            rigidbodies.append(rb)
+    return rigidbodies
+
+
 def getSelectedRigidBody():
     """
     Gets the selected rigid body joint.
@@ -155,25 +170,106 @@ def getSelectedRigidBody():
     return None
 
 
-def getCapsule(node):
+def getCapsule(rigidbody):
     """
-    Gets a capsule mesh from a node.
+    Gets a capsule mesh from a rigidbody.
 
     Args:
-        node(str): A node name.
+        node(str): A rigidbody name.
 
     Returns:
         str: A capsule mesh name.
     """
-    if cmds.nodeType(node) == 'mesh':
-        node = cmds.listRelatives(node, parent=True, fullPath=True)[0]
-    if node.endswith('_rb'):
-        for child in cmds.listRelatives(node, fullPath=True) or []:
-            if child.endswith('_rb_capsule'):
-                return child
-    elif node.endswith('_rb_capsule'):
-        return node
+    for child in cmds.listRelatives(rigidbody, fullPath=True) or []:
+        if child.endswith('_rb_capsule'):
+            return child
     return None
+
+
+def toCkName(name):
+    """
+    Converts a name to its name in the CK.
+
+    Args:
+        name(str): A name.
+
+    Returns:
+        str: A converted name.
+    """
+    name = name.split('|')[-1]
+    # name = name.replace('_ob_', '[')
+    # name = name.replace('_cb_', ']')
+    # name = name.replace('_s_', ' ')
+    return name
+
+
+def getAttachmentSource(attachment):
+    """
+    Gets the source rigidbody of an attachment.
+
+    Args:
+        attachment(str): A node name.
+
+    Returns:
+        str: A source node name.
+    """
+    return attachment.split('_con_')[0]
+
+
+def getAttachmentDestination(attachment):
+    """
+    Gets the destination rigidbody of an attachment.
+
+    Args:
+        attachment(str): A node name.
+
+    Returns:
+        str: A source node name.
+    """
+    return attachment.split('_con_')[1].replace('_rb_attach_point', '_rb')
+
+
+def isValidAttachment(attachment):
+    """
+    Determines if an attachment has a valid destination.
+
+    Args:
+        attachment(str): An attachment node.
+
+    Returns:
+        bool: Whether the attachment is valid.
+    """
+    return cmds.objExists(getAttachmentDestination(attachment))
+
+
+def getCapsuleRigidbody(capsule):
+    """
+    Gets a rigidbody for a capsule.
+
+    Args:
+        capsule(str): A capsule name.
+
+    Returns:
+        str: A rigidbody name.
+    """
+    return capsule.replace('_capsule', '')
+
+
+def getAttachments(rigidbody):
+    """
+    Gets attachment meshes from a rigid body.
+
+    Args:
+        rigidbody(str): A node name.
+
+    Returns:
+        list[str]: A list of attachment node names.
+    """
+    attachments = []
+    for child in cmds.listRelatives(rigidbody, fullPath=True) or []:
+        if child.endswith('_rb_attach_point'):
+            attachments.append(child)
+    return attachments
 
 
 def getMeshPoints(mesh):

@@ -158,6 +158,13 @@ def updateSkyrimMenu(*args):
             subMenu=True, postMenuCommand="from ckmaya.ui import menu;menu.updateRecentProjects();"
         )
 
+        # Set Project Button
+        command = 'from ckmaya.ui import commands;commands.openProjectInExplorer()'
+        cmds.menuItem(
+            label='Open In Explorer', parent=parent_menu,
+            command=command
+        )
+
         # Add Project Manager
         command = 'from ckmaya.ui import project_manager;project_manager.load()'
         cmds.menuItem(
@@ -273,10 +280,35 @@ def updateSkyrimMenu(*args):
         )
 
         # Add Export Command
-        command = 'from ckmaya.core import ckcore;ckcore.exportAnimation()'
-        command = 'from ckmaya.ui import animation_manager;animation_manager.load()'
+        command = 'from ckmaya.ui import export_animation_tool;export_animation_tool.load()'
         cmds.menuItem(
-            label="Animation Manager",
+            label="Export Animation",
+            parent=parent_menu,
+            command=command
+        )
+
+        # Add Batch Export Command
+        command = 'from ckmaya.ui import batch_export_animation_tool;batch_export_animation_tool.load()'
+        cmds.menuItem(
+            label="Batch Export Animations",
+            parent=parent_menu,
+            command=command
+        )
+
+        cmds.menuItem(label='Other', divider=True, parent=parent_menu)
+
+        # Add HKX Command
+        command = 'from ckmaya.ui import commands;commands.convertHkx()'
+        cmds.menuItem(
+            label="Convert HKX to XML",
+            parent=parent_menu,
+            command=command
+        )
+
+        # Add XML Command
+        command = 'from ckmaya.ui import commands;commands.convertXml()'
+        cmds.menuItem(
+            label="Convert XML to HKX",
             parent=parent_menu,
             command=command
         )
