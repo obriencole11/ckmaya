@@ -1415,10 +1415,76 @@ def fixMissingBoneOrders():
         cmds.setAttr(attr, i)
 
 
+def assertBadBoneOrders():
+    """
+    Child bones should come after their parents.
+
+    Raises:
+        BadBoneOrderException: If any children would come before their parents.
+    """
+
+    def get_parents(bone):
+        parents = []
+        for parent in cmds.listRelatives(bone, parent=True) or []:
+            parents = [parent] + get_parents(parent)
+        return parents
+
+    def get_bone_order(bone):
+        if not cmds.attributeQuery('bone_order', node=bone, exists=True):
+            return None
+        return cmds.getAttr(f'{bone}.bone_order')
+
+    bad_bone_orders = []
+    for bone_order in cmds.ls('*.bone_order'):
+        index = cmds.getAttr(bone_order)
+        bone = bone_order.split('.')[0]
+        for parent in get_parents(bone):
+            parent_index = get_bone_order(parent)
+            if parent_index is None:
+                continue
+            if parent_index > index:
+                bad_bone_orders.append(f'{bone}:{index} < {parent}:{parent_index}')
+
+    if len(bad_bone_orders) > 0:
+        for message in bad_bone_orders:
+            print(message)
+        raise BadBoneOrderException('Bones found with bone orders below their parents. '
+                                    'See the console for more information.')
+
+
+class BadBoneOrderException(Exception):
+    pass
+
+
+def fixBadBoneOrders():
+    def get_parents(bone):
+        parents = []
+        for parent in cmds.listRelatives(bone, parent=True) or []:
+            parents = [parent] + get_parents(parent)
+        return parents
+
+
+    def get_bone_order(bone):
+        if not cmds.attributeQuery('bone_order', node=bone, exists=True):
+            return None
+        return cmds.getAttr(f'{bone}.bone_order')
+
+
+    bones = [bone_order.split('.')[0] for bone_order in cmds.ls('*.bone_order')]
+    bones = sorted(bones, key=lambda bone: len(get_parents(bone)))
+    for i, bone in enumerate(bones):
+        print(bone, i)
+        cmds.setAttr(f'{bone}.bone_order', i)
+
+
+
 def exportRig():
     """
     Exports the scene export skeleton as an hkx.
     """
+
+    # Ensure the scene can be exported
+    assertBadBoneOrders()
 
     # Get the project
     project = ckproject.getProject()
@@ -1603,16 +1669,16 @@ def exportSkin():
         ckcmd.importskin(path, os.path.dirname(path))
 
         # Apply nif patch
-        filepath = path.replace('.fbx', '.nif')
-        data = cknif.loadNif(filepath)
-        cknif.fixNifMeshes(data, meshes)
-        for mesh in meshes:
-            textures = getTextures(mesh)
-            textures = {name: exportTexture(texture) for name, texture in textures.items()}
-            textures = {name: ckproject.getProject().getExportPath(texture) for name, texture in textures.items()}
-            textures = {name: texture for name, texture in textures.items()}
-            cknif.setMeshTextures(data, mesh, **textures)
-        cknif.saveNif(data, filepath)
+        # filepath = path.replace('.fbx', '.nif')
+        # data = cknif.loadNif(filepath)
+        # cknif.fixNifMeshes(data, meshes)
+        # for mesh in meshes:
+        #     textures = getTextures(mesh)
+        #     textures = {name: exportTexture(texture) for name, texture in textures.items()}
+        #     textures = {name: ckproject.getProject().getExportPath(texture) for name, texture in textures.items()}
+        #     textures = {name: texture for name, texture in textures.items()}
+        #     cknif.setMeshTextures(data, mesh, **textures)
+        # cknif.saveNif(data, filepath)
 
     finally:
         cmds.undoInfo(closeChunk=True)

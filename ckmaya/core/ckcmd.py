@@ -175,14 +175,14 @@ def exportfbx(nif, output_directory, textures=None):
     Returns:
         str: The executed command string.
     """
-    command = '%s exportfbx "%s" -e "%s"' % (CKCMD, nif, output_directory)
+    command = '%s exportfbx "%s" --e="%s"' % (CKCMD, nif, output_directory)
     if textures is not None:
         command += ' -t "%s"' % textures
     run_command(command, directory=output_directory)
     return command
 
 
-def convertHkx(hkx, xml):
+def convertHkxToXml(hkx, xml):
     """
     Converts an hkx file to xml.
 
@@ -195,12 +195,12 @@ def convertHkx(hkx, xml):
     """
     output_directory = os.path.dirname(xml)
     xml = os.path.basename(xml)
-    command = '%s convert "%s" -o "%s" -v:AMD64 ' % (CKCMD, hkx, xml)
+    command = '%s convert "%s" -o "%s" -f SAVE_TEXT_FORMAT ' % (CKCMD, hkx, xml)
     run_command(command, directory=output_directory)
     return command
 
 
-def convertXml(xml, hkx):
+def convertXmlToHkx(xml, hkx):
     """
     Converts an xml file to hkx.
 
@@ -212,7 +212,9 @@ def convertXml(xml, hkx):
         str: The executed command string.
     """
     output_directory = os.path.dirname(hkx)
-    command = '"%s" convert -v:WIN32 "%s" "%s"' % (HKXCMD, xml, hkx)
+    command = '"%s" convert "%s" -o "%s" -v AMD64 -f SAVE_DEFAULT' % (CKCMD, xml, hkx)
+    run_command(command, directory=output_directory)
+    command = '"%s" convert "%s" -o "%s" -v WIN32 -f SAVE_DEFAULT' % (CKCMD, xml, hkx.replace('.hkx', '_le.hkx'))
     run_command(command, directory=output_directory)
     return command
 

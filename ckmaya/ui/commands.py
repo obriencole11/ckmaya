@@ -89,7 +89,7 @@ def convertHkx():
     """
     hkxFile = core.getFileDialog(directory=ckproject.getProject().getDirectory(), fileTypes=['hkx'])
     xmlFile = hkxFile.replace('.hkx', '.xml')
-    ckcmd.convertHkx(hkxFile, xmlFile)
+    ckcmd.convertHkxToXml(hkxFile, xmlFile)
     if core.confirmDialog('Would you like to edit %s?' % xmlFile, title='Edit XML Dialog'):
         os.startfile(xmlFile)
 
@@ -99,7 +99,7 @@ def convertXml():
     """
     Prompts the user to select an xml file to convert to hkx.
     """
-    xmlFile = core.getFileDialog(directory=ckproject.getProject().getDirectory(), fileTypes=['hkx'])
+    xmlFile = core.getFileDialog(directory=ckproject.getProject().getDirectory(), fileTypes=['xml'])
     hkxFile = xmlFile.replace('.xml', '.hkx')
-    ckcmd.convertXml(xmlFile, hkxFile)
+    ckcmd.convertXmlToHkx(xmlFile, hkxFile)
 

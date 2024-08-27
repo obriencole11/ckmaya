@@ -123,7 +123,7 @@ def findTriShapeByName(mesh, data):
     raise RuntimeError('Failed to find mesh in nif file with name "%s"' % name)
 
 
-def findTriShapeByPolygons(mesh, data):
+def findTriShapesByPolygons(mesh, data):
     """
     Finds tri shapes in a nif scene with the same polycount as a mesh.
 
@@ -132,19 +132,27 @@ def findTriShapeByPolygons(mesh, data):
         data(NifFormat.Data): Nif data.
 
     Returns:
-        NifFormat.NiTriShape: Nif tri shapes.
+        List[Tuple[NifFormat.NiTriShape, List[int]]]: Nif tri shapes and matching faces.
     """
     # Get vertex counts of each mesh
     sel = om2.MSelectionList()
     sel.add(mesh)
     fnMesh = om2.MFnMesh(sel.getDependNode(0))
-    tri_count = fnMesh.numPolygons
+
+    # Find shaders for each polygon
+    shaders, faces = fnMesh.getConnectedShaders(0)
+    face_groups = [[] for shader in shaders]
+    for face, shader in enumerate(faces):
+        face_groups[shader].append(face)
 
     # Find tri shapes with the same counts
+    tri_shape_faces = []
     for tri_shape in getNiNodes(data, NifFormat.NiTriShape):
-        if tri_count == tri_shape.data.num_triangles:
-            return tri_shape
-    return None
+        for faces in face_groups:
+            if len(faces) == tri_shape.data.num_triangles:
+                tri_shape_faces.append((tri_shape, faces))
+                break
+    return tri_shape_faces
 
 
 def findNiNode(data, name):
@@ -217,6 +225,7 @@ def setMeshTextures(data, mesh, albedo=None, normal=None, emissive=None, cubemap
             texture_set.textures[7] = subsurface.replace('/', '\\').encode()
 
 
+
 def fixNifMeshes(data, meshes):
     """
     Fixes meshes in a nif file.
@@ -239,127 +248,131 @@ def fixNifMeshes(data, meshes):
         if not cmds.nodeType(mesh) == 'mesh':
             mesh = cmds.listRelatives(mesh, type='mesh')[0]
         meshName = mesh.split('|')[-1]
-
-        # Mesh data
-        tri_shape = findTriShapeByPolygons(mesh, data)
-        shape_data = tri_shape.data
         maya_weights = ckcore.getSkinWeights(mesh)
-
-        # Update mesh name
-        tri_shape.name = meshName.encode()
-
-        # Map maya vertices to nif vertices
         sel = om2.MSelectionList()
         sel.add(mesh)
         fnMesh = om2.MFnMesh(sel.getDependNode(0))
-        verts_per_polygon, normal_ids_per_polygon_index = fnMesh.getNormalIds()
-        mesh_normals = fnMesh.getNormals()
-        mesh_tangents = fnMesh.getTangents()
-        mesh_binormals = fnMesh.getBinormals()
-        nif_to_maya_vertex_mapping = {}
-        maya_to_nif_vertex_mapping = {}
-        nif_vertex_data = {}
-        for i in range(fnMesh.numPolygons):
-            for maya_vertex, nif_vertex in zip(fnMesh.getPolygonVertices(i), getTriangleVertices(shape_data.triangles[i])):
-                nif_to_maya_vertex_mapping[nif_vertex] = maya_vertex
-                maya_to_nif_vertex_mapping.setdefault(maya_vertex, set())
-                maya_to_nif_vertex_mapping[maya_vertex].add(nif_vertex)
 
-                # Get the meshes vertex normals, tangents and binormals
-                normal = mesh_normals[normal_ids_per_polygon_index[i]]
-                tangent = mesh_tangents[normal_ids_per_polygon_index[i]]
-                binormal = mesh_binormals[normal_ids_per_polygon_index[i]]
-                nif_vertex_data[nif_vertex] = (normal, tangent, binormal)
+        # Mesh data
+        tri_shape_faces = findTriShapesByPolygons(mesh, data)
+        for tri_shape, faces in tri_shape_faces:
+            shape_data = tri_shape.data
+            face_weights = {index: weights for index, weights in maya_weights.items() if index in faces}
 
-        # Apply vertex data
-        for vertex, (normal, tangent, binormal) in nif_vertex_data.items():
-            x = tri_shape.data.normals[vertex].x
-            y = tri_shape.data.normals[vertex].y
-            z = tri_shape.data.normals[vertex].z
-            tri_shape.data.normals[vertex].x = x
-            tri_shape.data.normals[vertex].y = -z
-            tri_shape.data.normals[vertex].z = y
-        tri_shape.update_tangent_space()
+            # Update mesh name
+            tri_shape.name = meshName.encode()
 
-        # Apply back facing culling
-        if cmds.getAttr('%s.doubleSided' % mesh):
-            tri_shape.bs_properties[0].shader_flags_2.slsf_2_double_sided = 1
+            # Map maya vertices to nif vertices
+            verts_per_polygon, normal_ids_per_polygon_index = fnMesh.getNormalIds()
+            mesh_normals = fnMesh.getNormals()
+            mesh_tangents = fnMesh.getTangents()
+            mesh_binormals = fnMesh.getBinormals()
+            nif_to_maya_vertex_mapping = {}
+            maya_to_nif_vertex_mapping = {}
+            nif_vertex_data = {}
+            for i in range(fnMesh.numPolygons):
+                if i not in faces:
+                    continue
+                for maya_vertex, nif_vertex in zip(fnMesh.getPolygonVertices(i), getTriangleVertices(shape_data.triangles[i])):
+                    nif_to_maya_vertex_mapping[nif_vertex] = maya_vertex
+                    maya_to_nif_vertex_mapping.setdefault(maya_vertex, set())
+                    maya_to_nif_vertex_mapping[maya_vertex].add(nif_vertex)
 
-        # Add alpha property
-        alpha_property = NifFormat.NiAlphaProperty(parent=tri_shape)
-        alpha_property.flags = 4844
-        alpha_property.threshold = 6
-        tri_shape.bs_properties.append(alpha_property)
-        tri_shape.bs_properties[1] = alpha_property
-        tri_shape.bs_properties.update_size()
+                    # Get the meshes vertex normals, tangents and binormals
+                    normal = mesh_normals[normal_ids_per_polygon_index[i]]
+                    tangent = mesh_tangents[normal_ids_per_polygon_index[i]]
+                    binormal = mesh_binormals[normal_ids_per_polygon_index[i]]
+                    nif_vertex_data[nif_vertex] = (normal, tangent, binormal)
 
-        # Get the meshes skin instance
-        skin_instance = tri_shape.skin_instance
-        skin_instance.__class__ = NifFormat.NiSkinInstance  # Convert NiDismemberSkinInstances to NiSkinInstances
-        skin_partition = skin_instance.skin_partition
+            # Apply vertex data
+            for vertex, (normal, tangent, binormal) in nif_vertex_data.items():
+                x = tri_shape.data.normals[vertex].x
+                y = tri_shape.data.normals[vertex].y
+                z = tri_shape.data.normals[vertex].z
+                tri_shape.data.normals[vertex].x = x
+                tri_shape.data.normals[vertex].y = -z
+                tri_shape.data.normals[vertex].z = y
+            tri_shape.update_tangent_space()
 
-        # Get the skins bone indices
-        bone_names = {}
-        bone_indices = {}
-        for index, bone in enumerate(skin_instance.bones):
-            bone_names[index] = toMayaName(bone.name.decode())
-            bone_indices[toMayaName(bone.name.decode())] = index
+            # Apply back facing culling
+            if cmds.getAttr('%s.doubleSided' % mesh):
+                tri_shape.bs_properties[0].shader_flags_2.slsf_2_double_sided = 1
 
-        # Convert maya weights into nif weights
-        nif_weights = {}
-        for maya_index, maya_bone_weights in maya_weights.items():
-            for nif_index in maya_to_nif_vertex_mapping[maya_index]:
-                maya_bone_weights = {bone: weight for bone, weight in maya_bone_weights.items() if weight > 0.001}
-                nif_weights[nif_index] = {bone_indices[bone]: weight for bone, weight in maya_bone_weights.items()}
+            # Add alpha property
+            alpha_property = NifFormat.NiAlphaProperty(parent=tri_shape)
+            alpha_property.flags = 4844
+            alpha_property.threshold = 6
+            tri_shape.bs_properties.append(alpha_property)
+            tri_shape.bs_properties[1] = alpha_property
+            tri_shape.bs_properties.update_size()
 
-        # Map maya bones to nif bones
-        nif_bone_to_maya_bone = {}
-        for nif_bone in skin_instance.bones:
-            maya_bone = toMayaName(nif_bone.name.decode())
-            nif_bone_to_maya_bone[nif_bone] = maya_bone
-            maya_to_nif_vertex_mapping[maya_bone] = nif_bone
+            # Get the meshes skin instance
+            skin_instance = tri_shape.skin_instance
+            skin_instance.__class__ = NifFormat.NiSkinInstance  # Convert NiDismemberSkinInstances to NiSkinInstances
+            skin_partition = skin_instance.skin_partition
 
-        # Update skinning for each partition
-        for skin_partition_block in skin_partition.skin_partition_blocks:
-
-            # Ensure all skin instance bone indices are in the skin partition
-            missing_indices = []
-            bone_indices = [i for i in skin_partition_block.bones]
+            # Get the skins bone indices
+            bone_names = {}
+            bone_indices = {}
             for index, bone in enumerate(skin_instance.bones):
-                if index not in bone_indices:
-                    missing_indices.append(index)
-            num_bones = skin_partition_block.num_bones
-            skin_partition_block.num_bones = num_bones + len(missing_indices)
-            skin_partition_block.bones.update_size()
-            for i, index in enumerate(missing_indices):
-                skin_partition_block.bones[num_bones + i] = index
+                bone_names[index] = toMayaName(bone.name.decode())
+                bone_indices[toMayaName(bone.name.decode())] = index
 
-            # Get a mapping of skin partition bone indices to skin instance bone indices
-            partition_bone_indices = {index: i for i, index in enumerate(skin_partition_block.bones)}
+            # Convert maya weights into nif weights
+            nif_weights = {}
+            for maya_index, maya_bone_weights in face_weights.items():
+                for nif_index in maya_to_nif_vertex_mapping[maya_index]:
+                    maya_bone_weights = {bone: weight for bone, weight in maya_bone_weights.items() if weight > 0.001}
+                    nif_weights[nif_index] = {bone_indices[bone]: weight for bone, weight in maya_bone_weights.items()}
 
-            # print (len(skin_partition_block.bone_indices), len(skin_partition_block.vertex_map))
-            for partition_vertex, vertex in enumerate(skin_partition_block.vertex_map):
-                # Clear existing bone weights
-                for i in range(4):
-                    skin_partition_block.bone_indices[partition_vertex][i] = skin_partition_block.bones[0]
-                    skin_partition_block.vertex_weights[partition_vertex][i] = 0.0
+            # Map maya bones to nif bones
+            nif_bone_to_maya_bone = {}
+            for nif_bone in skin_instance.bones:
+                maya_bone = toMayaName(nif_bone.name.decode())
+                nif_bone_to_maya_bone[nif_bone] = maya_bone
+                maya_to_nif_vertex_mapping[maya_bone] = nif_bone
 
-                # Set bone weights
-                vertex_bone_weights = {index: weight for index, weight in nif_weights[vertex].items() if weight > 0.001}
-                for i, (bone_index, weight) in enumerate(vertex_bone_weights.items()):
-                    try:
-                        skin_partition_block.bone_indices[partition_vertex]
-                    except KeyError:
-                        raise KeyError(f'Failed to find partition vertex {partition_vertex} for mesh {meshName}')
-                    try:
-                        skin_partition_block.bone_indices[partition_vertex][i]
-                    except KeyError:
-                        raise KeyError(f'Failed to find bone index {i} for partition vertex {partition_vertex} of '
-                                       f'mesh {meshName}')
-                    try:
-                        partition_bone_indices[bone_index]
-                    except KeyError:
-                        raise KeyError(f'Failed to find bone index {bone_index} for mesh {meshName}')
-                    skin_partition_block.bone_indices[partition_vertex][i] = partition_bone_indices[bone_index]
-                    skin_partition_block.vertex_weights[partition_vertex][i] = weight
+            # Update skinning for each partition
+            for skin_partition_block in skin_partition.skin_partition_blocks:
+
+                # Ensure all skin instance bone indices are in the skin partition
+                missing_indices = []
+                bone_indices = [i for i in skin_partition_block.bones]
+                for index, bone in enumerate(skin_instance.bones):
+                    if index not in bone_indices:
+                        missing_indices.append(index)
+                num_bones = skin_partition_block.num_bones
+                skin_partition_block.num_bones = num_bones + len(missing_indices)
+                skin_partition_block.bones.update_size()
+                for i, index in enumerate(missing_indices):
+                    skin_partition_block.bones[num_bones + i] = index
+
+                # Get a mapping of skin partition bone indices to skin instance bone indices
+                partition_bone_indices = {index: i for i, index in enumerate(skin_partition_block.bones)}
+
+                # print (len(skin_partition_block.bone_indices), len(skin_partition_block.vertex_map))
+                for partition_vertex, vertex in enumerate(skin_partition_block.vertex_map):
+                    # Clear existing bone weights
+                    for i in range(4):
+                        skin_partition_block.bone_indices[partition_vertex][i] = skin_partition_block.bones[0]
+                        skin_partition_block.vertex_weights[partition_vertex][i] = 0.0
+
+                    # Set bone weights
+                    vertex_bone_weights = {index: weight for index, weight in nif_weights[vertex].items() if weight > 0.001}
+                    for i, (bone_index, weight) in enumerate(vertex_bone_weights.items()):
+                        try:
+                            skin_partition_block.bone_indices[partition_vertex]
+                        except KeyError:
+                            raise KeyError(f'Failed to find partition vertex {partition_vertex} for mesh {meshName}')
+                        try:
+                            skin_partition_block.bone_indices[partition_vertex][i]
+                        except KeyError:
+                            raise KeyError(f'Failed to find bone index {i} for partition vertex {partition_vertex} of '
+                                           f'mesh {meshName}')
+                        try:
+                            partition_bone_indices[bone_index]
+                        except KeyError:
+                            raise KeyError(f'Failed to find bone index {bone_index} for mesh {meshName}')
+                        skin_partition_block.bone_indices[partition_vertex][i] = partition_bone_indices[bone_index]
+                        skin_partition_block.vertex_weights[partition_vertex][i] = weight
 
